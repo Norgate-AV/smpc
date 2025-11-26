@@ -91,6 +91,7 @@ var (
 	procGetForegroundWindow      = user32.NewProc("GetForegroundWindow")
 	procKeybd_event              = user32.NewProc("keybd_event")
 	procShowWindow               = user32.NewProc("ShowWindow")
+	procEnumChildWindows         = user32.NewProc("EnumChildWindows")
 )
 
 const (
@@ -185,6 +186,16 @@ func sendF12ViaKeybdEvent() bool {
 	procKeybd_event.Call(vkCode, 0, 0x1|0x2, 0) // KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP
 
 	fmt.Println("Debug: keybd_event succeeded")
+	return true
+}
+
+func sendEnterViaKeybdEvent() bool {
+	// VK_RETURN = 0x0D
+	vkCode := uintptr(0x0D)
+	fmt.Println("Debug: Sending Enter via keybd_event")
+	procKeybd_event.Call(vkCode, 0, 0x1, 0)
+	time.Sleep(50 * time.Millisecond)
+	procKeybd_event.Call(vkCode, 0, 0x1|0x2, 0)
 	return true
 }
 
@@ -283,9 +294,8 @@ func enumWindowsCallback(hwnd uintptr, lparam uintptr) uintptr {
 		title := getWindowText(hwnd)
 		pid := getWindowProcessId(hwnd)
 
-		if title != "" {
-			foundWindows = append(foundWindows, windowInfo{hwnd: hwnd, title: title, pid: pid})
-		}
+		// Include even if title is empty; we may match by child text later
+		foundWindows = append(foundWindows, windowInfo{hwnd: hwnd, title: title, pid: pid})
 	}
 
 	return 1 // Continue enumeration
@@ -396,6 +406,107 @@ func findSIMPLWindow(processName string, debug bool) (uintptr, string) {
 	}
 
 	return 0, ""
+}
+
+// waitForDialog looks for a visible window belonging to the SIMPL process
+// whose title contains the provided substring. It polls until timeout.
+func waitForDialog(pid uint32, titleSubstring string, timeout time.Duration, debug bool) (uintptr, string, bool) {
+	deadline := time.Now().Add(timeout)
+	normalized := strings.ToLower(titleSubstring)
+
+	for time.Now().Before(deadline) {
+		foundWindows = nil
+		callback := syscall.NewCallback(enumWindowsCallback)
+		procEnumWindows.Call(callback, 0)
+
+		// First pass: match within specified PID (if provided)
+		for _, w := range foundWindows {
+			if pid != 0 && w.pid != pid {
+				continue
+			}
+			if windowOrChildrenContain(w.hwnd, normalized) {
+				if debug {
+					fmt.Printf("Debug: Detected dialog '%s' (matched '%s')\n", w.title, titleSubstring)
+				}
+				return w.hwnd, w.title, true
+			}
+		}
+
+		// Second pass: relaxed (any process) to catch helper-process dialogs
+		if pid != 0 {
+			for _, w := range foundWindows {
+				if windowOrChildrenContain(w.hwnd, normalized) {
+					if debug {
+						fmt.Printf("Debug: Detected dialog (any PID) '%s' (matched '%s')\n", w.title, titleSubstring)
+					}
+					return w.hwnd, w.title, true
+				}
+			}
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	if debug {
+		fmt.Printf("Debug: Timeout waiting for dialog containing '%s'\n", titleSubstring)
+	}
+	return 0, "", false
+}
+
+var (
+	childMatchSubstr string
+	childFound       bool
+)
+
+func enumChildCallback(hwnd uintptr, lparam uintptr) uintptr {
+	t := strings.ToLower(getWindowText(hwnd))
+	if t != "" && strings.Contains(t, childMatchSubstr) {
+		childFound = true
+		return 0 // stop enumeration
+	}
+	return 1
+}
+
+func windowOrChildrenContain(hwnd uintptr, substrLower string) bool {
+	// Check window title
+	if strings.Contains(strings.ToLower(getWindowText(hwnd)), substrLower) {
+		return true
+	}
+	// Check child controls' text
+	childMatchSubstr = substrLower
+	childFound = false
+	cb := syscall.NewCallback(enumChildCallback)
+	procEnumChildWindows.Call(hwnd, cb, 0)
+	return childFound
+}
+
+// getSimplPid retrieves the PID of smpwin.exe, returns 0 if not found
+func getSimplPid() uint32 {
+	var targetPID uint32
+	snapshot, _, _ := procCreateToolhelp32Snapshot.Call(TH32CS_SNAPPROCESS, 0)
+	if snapshot == 0 {
+		return 0
+	}
+	defer procCloseHandle.Call(snapshot)
+
+	var pe PROCESSENTRY32
+	pe.dwSize = uint32(unsafe.Sizeof(pe))
+
+	ret, _, _ := procProcess32First.Call(snapshot, uintptr(unsafe.Pointer(&pe)))
+	if ret != 0 {
+		for {
+			exeName := syscall.UTF16ToString(pe.szExeFile[:])
+			if strings.ToLower(exeName) == "smpwin.exe" {
+				targetPID = pe.th32ProcessID
+				break
+			}
+			ret, _, _ := procProcess32Next.Call(snapshot, uintptr(unsafe.Pointer(&pe)))
+			if ret == 0 {
+				break
+			}
+		}
+	}
+	return targetPID
 }
 
 func isWindowResponsive(hwnd uintptr, debug bool) bool {
@@ -575,8 +686,44 @@ func main() {
 	fmt.Println("Sending F12 keystroke to trigger compile...")
 	if sendF12ViaKeybdEvent() {
 		fmt.Println("Successfully sent F12 keystroke")
-		fmt.Println("Waiting for compile to complete...")
-		time.Sleep(3 * time.Second)
+
+		// Detect SIMPL Windows process PID
+		pid := getSimplPid()
+		if pid == 0 {
+			fmt.Println("Warning: Could not determine SIMPL Windows process PID; dialog detection may be limited")
+		}
+
+		// Detect save prompt ("Convert/Compile") and auto-confirm "Yes"
+		if pid != 0 {
+			if hwndDlg, title, ok := waitForDialog(pid, "Convert/Compile", 5*time.Second, true); ok {
+				fmt.Printf("Detected save prompt: %s\n", title)
+				// Bring dialog to foreground and press Enter (default is "Yes")
+				_ = setForeground(hwndDlg)
+				time.Sleep(300 * time.Millisecond)
+				_ = sendEnterViaKeybdEvent()
+				fmt.Println("Auto-confirmed save prompt with 'Yes'")
+			}
+		}
+
+		// Detect compile progress start ("Compiling...")
+		if pid != 0 {
+			fmt.Println("Waiting for 'Compiling...' dialog...")
+			if _, title, ok := waitForDialog(pid, "Compiling...", 30*time.Second, true); ok {
+				fmt.Printf("Compile started: %s\n", title)
+			} else {
+				fmt.Println("Warning: Did not detect 'Compiling...' dialog within timeout")
+			}
+		}
+
+		// Detect compile completion ("Compile Complete")
+		if pid != 0 {
+			fmt.Println("Waiting for 'Compile Complete' dialog...")
+			if _, title, ok := waitForDialog(pid, "Compile Complete", 120*time.Second, true); ok {
+				fmt.Printf("Compile completed: %s\n", title)
+			} else {
+				fmt.Println("Warning: Did not detect 'Compile Complete' dialog within timeout")
+			}
+		}
 	}
 
 	fmt.Println("\nPress Enter to exit...")
