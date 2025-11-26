@@ -153,6 +153,25 @@ func closeWindow(hwnd uintptr, title string) {
 	time.Sleep(500 * time.Millisecond)
 }
 
+// findAndClickButton finds a button child control with the specified text and clicks it
+// Returns true if the button was found and clicked, false otherwise
+func findAndClickButton(parentHwnd uintptr, buttonText string) bool {
+	childInfos := collectChildInfos(parentHwnd)
+
+	for _, ci := range childInfos {
+		if ci.className == "Button" && strings.EqualFold(ci.text, buttonText) {
+			fmt.Printf("[DEBUG] Found button %q with hwnd=%d, sending click\n", buttonText, ci.hwnd)
+			// Send BN_CLICKED notification to parent
+			// WM_COMMAND: wParam = MAKEWPARAM(controlID, BN_CLICKED), lParam = hwnd
+			procSendMessageW.Call(parentHwnd, WM_COMMAND, uintptr(BN_CLICKED), ci.hwnd)
+			return true
+		}
+	}
+
+	fmt.Printf("[DEBUG] Button %q not found\n", buttonText)
+	return false
+}
+
 func relaunchAsAdmin() error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -203,10 +222,12 @@ var (
 const (
 	WM_NULL          = 0x0000
 	WM_CLOSE         = 0x0010
+	WM_COMMAND       = 0x0111
 	WM_KEYDOWN       = 0x0100
 	WM_KEYUP         = 0x0101
 	SMTO_ABORTIFHUNG = 0x0002
 	SMTO_BLOCK       = 0x0003
+	BN_CLICKED       = 0
 
 	INPUT_KEYBOARD        = 1
 	KEYEVENTF_SCANCODE    = 0x0008
@@ -1001,6 +1022,7 @@ func main() {
 		noticeMessages := []string{}
 		errorMessages := []string{}
 		hasErrors := false
+		var compileCompleteHwnd uintptr
 
 		// Detect and parse Compile Complete dialog
 		if pid != 0 && monitorCh != nil {
@@ -1012,14 +1034,13 @@ func main() {
 
 			if ok {
 				fmt.Printf("Detected: %s\n", ev.Title)
+				compileCompleteHwnd = ev.Hwnd // Store for later closing
 				childInfos := collectChildInfos(ev.Hwnd)
 				fmt.Printf("[DEBUG] Child controls in %s dialog:\n", ev.Title)
 
 				for _, ci := range childInfos {
 					fmt.Printf("[DEBUG] class=%q text=%q (length=%d)\n", ci.className, ci.text, len(ci.text))
-				}
-
-				// Parse stats from Compile Complete dialog
+				} // Parse stats from Compile Complete dialog
 				for _, ci := range childInfos {
 					text := strings.ReplaceAll(ci.text, "\r\n", "\n")
 					lines := strings.SplitSeq(text, "\n")
@@ -1142,14 +1163,39 @@ func main() {
 		}
 
 		// Close SIMPL Windows after successful compilation
-		fmt.Println("\nClosing SIMPL Windows...")
+		fmt.Println("\nClosing dialogs and SIMPL Windows...")
 
-		// Give a moment for any remaining UI updates
-		time.Sleep(1 * time.Second)
+		// First, close the "Compile Complete" dialog if it's still open
+		if compileCompleteHwnd != 0 {
+			closeWindow(compileCompleteHwnd, "Compile Complete dialog")
+			time.Sleep(500 * time.Millisecond)
+		}
 
-		// Close the main SIMPL Windows application
+		// Check for and handle "Confirmation" dialog that may appear when closing
+		if pid != 0 && monitorCh != nil {
+			ev, ok := waitOnMonitor(2*time.Second,
+				func(e WindowEvent) bool { return strings.EqualFold(e.Title, "Confirmation") },
+				func(e WindowEvent) bool { return strings.Contains(strings.ToLower(e.Title), "confirmation") },
+			)
+
+			if ok {
+				fmt.Printf("Detected dialog: %s (clicking 'No' to close without saving)\n", ev.Title)
+				// Find and click the "No" button directly
+				if findAndClickButton(ev.Hwnd, "&No") {
+					fmt.Println("[DEBUG] Successfully clicked 'No' button")
+					time.Sleep(500 * time.Millisecond)
+				} else {
+					fmt.Println("[DEBUG] WARNING: Could not find 'No' button, trying to close dialog")
+					closeWindow(ev.Hwnd, "Confirmation dialog")
+					time.Sleep(500 * time.Millisecond)
+				}
+			}
+		}
+
+		// Now close the main SIMPL Windows application
 		if hwnd != 0 {
 			closeWindow(hwnd, "SIMPL Windows")
+			time.Sleep(1 * time.Second)
 			fmt.Println("SIMPL Windows closed successfully")
 		} else {
 			fmt.Println("Warning: Could not close SIMPL Windows (main window handle not found)")
