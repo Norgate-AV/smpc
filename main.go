@@ -897,6 +897,20 @@ func main() {
 			)
 			if ok {
 				fmt.Printf("Compile completed: %s\n", ev.Title)
+				// Parse child texts for error/warning/info counts
+				childTexts := collectChildTexts(ev.Hwnd)
+				var warnings, notices int
+				for _, t := range childTexts {
+					if n, ok := parseStatLine(t, "Program Warnings:"); ok {
+						warnings = n
+					}
+					if n, ok := parseStatLine(t, "Program Notices:"); ok {
+						notices = n
+					}
+				}
+				fmt.Printf("Compile results: Warnings=%d, Notices=%d\n", warnings, notices)
+				// Optionally print all child texts for debug
+				fmt.Printf("Debug: Compile Complete dialog child texts: %v\n", childTexts)
 			} else {
 				fmt.Println("Warning: Did not detect 'Compile Complete' dialog within timeout")
 			}
@@ -905,4 +919,17 @@ func main() {
 
 	fmt.Println("\nPress Enter to exit...")
 	fmt.Scanln()
+}
+
+// parseStatLine parses a line like "Program Warnings: 1" and returns (1, true) if matched, else (0, false)
+func parseStatLine(line, prefix string) (int, bool) {
+	line = strings.TrimSpace(line)
+	if strings.HasPrefix(line, prefix) {
+		rest := strings.TrimSpace(line[len(prefix):])
+		var n int
+		if _, err := fmt.Sscanf(rest, "%d", &n); err == nil {
+			return n, true
+		}
+	}
+	return 0, false
 }
