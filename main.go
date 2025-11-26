@@ -1014,8 +1014,8 @@ func main() {
 				for _, ci := range childInfos {
 					if ci.className == "ListBox" && ci.text != "" {
 						text := strings.ReplaceAll(ci.text, "\r\n", "\n")
-						lines := strings.Split(text, "\n")
-						for _, line := range lines {
+						lines := strings.SplitSeq(text, "\n")
+						for line := range lines {
 							line = strings.TrimSpace(line)
 							if line == "" {
 								continue
