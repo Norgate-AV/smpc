@@ -63,12 +63,14 @@ type childInfo struct {
 func collectChildInfos(hwnd uintptr) []childInfo {
 	infos := []childInfo{}
 	var cb func(hwnd uintptr, lparam uintptr) uintptr
+
 	cb = func(chWnd uintptr, lparam uintptr) uintptr {
 		t := getWindowText(chWnd)
 		c := getClassName(chWnd)
 		infos = append(infos, childInfo{hwnd: chWnd, className: c, text: t})
 		return 1
 	}
+
 	procEnumChildWindows.Call(hwnd, syscall.NewCallback(cb), 0)
 	return infos
 }
@@ -345,10 +347,12 @@ func waitOnMonitor(timeout time.Duration, matchers ...func(WindowEvent) bool) (W
 	if monitorCh == nil {
 		return WindowEvent{}, false
 	}
+
 	// First, check recent cache to avoid missing already-seen dialogs
 	recentMu.Lock()
 	for i := len(recentEvents) - 1; i >= 0; i-- {
 		ev := recentEvents[i]
+
 		for _, m := range matchers {
 			if m(ev) {
 				recentMu.Unlock()
@@ -356,10 +360,12 @@ func waitOnMonitor(timeout time.Duration, matchers ...func(WindowEvent) bool) (W
 			}
 		}
 	}
+
 	recentMu.Unlock()
 
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
+
 	for {
 		select {
 		case ev := <-monitorCh:
@@ -539,12 +545,15 @@ func findSIMPLWindow(processName string, debug bool) (uintptr, string) {
 func enumerateWindows() []windowInfo {
 	windowsMu.Lock()
 	defer windowsMu.Unlock()
+
 	foundWindows = nil
 	callback := syscall.NewCallback(enumWindowsCallback)
 	procEnumWindows.Call(callback, 0)
+
 	// Make a copy to avoid races with subsequent enumerations
 	windows := make([]windowInfo, len(foundWindows))
 	copy(windows, foundWindows)
+
 	return windows
 }
 
@@ -580,6 +589,7 @@ func enumerateWindows() []windowInfo {
 // If pid==0, it will log windows from all processes; otherwise it filters to that PID.
 func startWindowMonitor(pid uint32, interval time.Duration) {
 	seen := make(map[uintptr]bool)
+
 	go func() {
 		fmt.Println("Debug: Window monitor started")
 		for {
@@ -607,12 +617,16 @@ func startWindowMonitor(pid uint32, interval time.Duration) {
 					// Broadcast event (non-blocking) and store in recent cache
 					if monitorCh != nil {
 						ev := WindowEvent{Hwnd: w.hwnd, Title: w.title, Pid: w.pid, Class: getClassName(w.hwnd)}
+
 						recentMu.Lock()
 						recentEvents = append(recentEvents, ev)
+
 						if len(recentEvents) > 256 {
 							recentEvents = recentEvents[len(recentEvents)-256:]
 						}
+
 						recentMu.Unlock()
+
 						select {
 						case monitorCh <- ev:
 						default:
@@ -629,16 +643,20 @@ func startWindowMonitor(pid uint32, interval time.Duration) {
 
 func collectChildTexts(hwnd uintptr) []string {
 	texts := []string{}
+
 	// inner callback captures texts
 	var cb func(hwnd uintptr, lparam uintptr) uintptr
+
 	cb = func(chWnd uintptr, lparam uintptr) uintptr {
 		t := getWindowText(chWnd)
 		if t != "" {
 			texts = append(texts, t)
 		}
+
 		// continue enumeration
 		return 1
 	}
+
 	procEnumChildWindows.Call(hwnd, syscall.NewCallback(cb), 0)
 	return texts
 }
@@ -646,10 +664,12 @@ func collectChildTexts(hwnd uintptr) []string {
 // getSimplPid retrieves the PID of smpwin.exe, returns 0 if not found
 func getSimplPid() uint32 {
 	var targetPID uint32
+
 	snapshot, _, _ := procCreateToolhelp32Snapshot.Call(TH32CS_SNAPPROCESS, 0)
 	if snapshot == 0 {
 		return 0
 	}
+
 	defer procCloseHandle.Call(snapshot)
 
 	var pe PROCESSENTRY32
@@ -663,12 +683,14 @@ func getSimplPid() uint32 {
 				targetPID = pe.th32ProcessID
 				break
 			}
+
 			ret, _, _ := procProcess32Next.Call(snapshot, uintptr(unsafe.Pointer(&pe)))
 			if ret == 0 {
 				break
 			}
 		}
 	}
+
 	return targetPID
 }
 
@@ -782,12 +804,14 @@ func main() {
 	go func() {
 		// Try to obtain PID repeatedly until found, then monitor that PID
 		var pid uint32
+
 		for i := 0; i < 50 && pid == 0; i++ { // up to ~5s
 			pid = getSimplPid()
 			if pid == 0 {
 				time.Sleep(100 * time.Millisecond)
 			}
 		}
+
 		// Init channel
 		monitorCh = make(chan WindowEvent, 64)
 		if pid == 0 {
@@ -885,6 +909,7 @@ func main() {
 				func(e WindowEvent) bool { return strings.EqualFold(e.Title, "Convert/Compile") },
 				func(e WindowEvent) bool { return strings.Contains(strings.ToLower(e.Title), "convert/compile") },
 			)
+
 			if ok {
 				fmt.Printf("Detected save prompt: %s\n", ev.Title)
 				_ = setForeground(ev.Hwnd)
@@ -903,6 +928,7 @@ func main() {
 				func(e WindowEvent) bool { return strings.EqualFold(e.Title, "Compiling...") },
 				func(e WindowEvent) bool { return strings.Contains(strings.ToLower(e.Title), "compiling") },
 			)
+
 			if ok {
 				fmt.Printf("Compile started: %s\n", ev.Title)
 			} else {
@@ -917,12 +943,14 @@ func main() {
 				func(e WindowEvent) bool { return strings.EqualFold(e.Title, "Compile Complete") },
 				func(e WindowEvent) bool { return strings.Contains(strings.ToLower(e.Title), "compile complete") },
 			)
+
 			if ok {
 				fmt.Printf("Compile completed: %s\n", ev.Title)
 				// Parse child texts for error/warning/info counts
 				// Enhanced debug: print class name and text for each child
 				childInfos := collectChildInfos(ev.Hwnd)
 				fmt.Println("[DEBUG] Child controls in Compile Complete dialog:")
+
 				for _, ci := range childInfos {
 					fmt.Printf("[DEBUG] class=%q text=%q\n", ci.className, ci.text)
 				}
@@ -930,6 +958,7 @@ func main() {
 				// Try to parse each line of each child text
 				var warnings, notices int
 				var compileTime float64
+
 				for _, ci := range childInfos {
 					lines := strings.Split(ci.text, "\n")
 					for _, t := range lines {
@@ -944,6 +973,7 @@ func main() {
 						}
 					}
 				}
+
 				fmt.Printf("Compile results: Warnings=%d, Notices=%d, Compile Time=%.2f seconds\n", warnings, notices, compileTime)
 			} else {
 				fmt.Println("Warning: Did not detect 'Compile Complete' dialog within timeout")
@@ -959,11 +989,15 @@ func main() {
 func parseStatLine(line, prefix string) (int, bool) {
 	pattern := "^" + regexp.QuoteMeta(prefix) + `\s*:\s*(\d+)`
 	fmt.Printf("[DEBUG] parseStatLine: line=%q, prefix=%q, pattern=%q\n", line, prefix, pattern)
+
 	re := regexp.MustCompile(pattern)
 	matches := re.FindStringSubmatch(line)
+
 	if len(matches) == 2 {
 		fmt.Printf("[DEBUG] parseStatLine: match found, value=%q\n", matches[1])
+
 		var n int
+
 		if _, err := fmt.Sscanf(matches[1], "%d", &n); err == nil {
 			fmt.Printf("[DEBUG] parseStatLine: parsed int=%d\n", n)
 			return n, true
@@ -973,6 +1007,7 @@ func parseStatLine(line, prefix string) (int, bool) {
 	} else {
 		fmt.Printf("[DEBUG] parseStatLine: no match\n")
 	}
+
 	return 0, false
 }
 
@@ -980,11 +1015,15 @@ func parseStatLine(line, prefix string) (int, bool) {
 func parseCompileTimeLine(line string) (float64, bool) {
 	pattern := `^Compile Time\s*:\s*([0-9.]+)\s*(s|seconds)?`
 	fmt.Printf("[DEBUG] parseCompileTimeLine: line=%q, pattern=%q\n", line, pattern)
+
 	re := regexp.MustCompile(pattern)
 	matches := re.FindStringSubmatch(line)
+
 	if len(matches) >= 2 {
 		fmt.Printf("[DEBUG] parseCompileTimeLine: match found, value=%q\n", matches[1])
+
 		var secs float64
+
 		if _, err := fmt.Sscanf(matches[1], "%f", &secs); err == nil {
 			fmt.Printf("[DEBUG] parseCompileTimeLine: parsed float=%f\n", secs)
 			return secs, true
@@ -994,5 +1033,6 @@ func parseCompileTimeLine(line string) (float64, bool) {
 	} else {
 		fmt.Printf("[DEBUG] parseCompileTimeLine: no match\n")
 	}
+
 	return 0, false
 }
