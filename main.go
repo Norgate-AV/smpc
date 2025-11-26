@@ -300,6 +300,58 @@ var (
 	windowsMu    sync.Mutex
 )
 
+// WindowEvent represents a newly seen top-level window
+type WindowEvent struct {
+	Hwnd  uintptr
+	Title string
+	Pid   uint32
+	Class string
+}
+
+// Channel to broadcast window events from the monitor
+var monitorCh chan WindowEvent
+
+var (
+	recentEvents []WindowEvent
+	recentMu     sync.Mutex
+)
+
+// waitOnMonitor waits for a window event whose title matches any of the
+// provided predicates within the given timeout. Returns the matching event
+// and true on success, or a zero-value event and false on timeout.
+func waitOnMonitor(timeout time.Duration, matchers ...func(WindowEvent) bool) (WindowEvent, bool) {
+	if monitorCh == nil {
+		return WindowEvent{}, false
+	}
+	// First, check recent cache to avoid missing already-seen dialogs
+	recentMu.Lock()
+	for i := len(recentEvents) - 1; i >= 0; i-- {
+		ev := recentEvents[i]
+		for _, m := range matchers {
+			if m(ev) {
+				recentMu.Unlock()
+				return ev, true
+			}
+		}
+	}
+	recentMu.Unlock()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	for {
+		select {
+		case ev := <-monitorCh:
+			for _, m := range matchers {
+				if m(ev) {
+					return ev, true
+				}
+			}
+		case <-timer.C:
+			return WindowEvent{}, false
+		}
+	}
+}
+
 func enumWindowsCallback(hwnd uintptr, lparam uintptr) uintptr {
 	if isWindowVisible(hwnd) {
 		title := getWindowText(hwnd)
@@ -529,6 +581,22 @@ func startWindowMonitor(pid uint32, interval time.Duration) {
 							}
 						}
 					}
+
+					// Broadcast event (non-blocking) and store in recent cache
+					if monitorCh != nil {
+						ev := WindowEvent{Hwnd: w.hwnd, Title: w.title, Pid: w.pid, Class: getClassName(w.hwnd)}
+						recentMu.Lock()
+						recentEvents = append(recentEvents, ev)
+						if len(recentEvents) > 256 {
+							recentEvents = recentEvents[len(recentEvents)-256:]
+						}
+						recentMu.Unlock()
+						select {
+						case monitorCh <- ev:
+						default:
+							// drop if buffer full
+						}
+					}
 				}
 			}
 
@@ -698,6 +766,8 @@ func main() {
 				time.Sleep(100 * time.Millisecond)
 			}
 		}
+		// Init channel
+		monitorCh = make(chan WindowEvent, 64)
 		if pid == 0 {
 			fmt.Println("Debug: Window monitor falling back to all processes (SIMPL PID not found yet)")
 			startWindowMonitor(0, 500*time.Millisecond)
@@ -786,33 +856,47 @@ func main() {
 			fmt.Println("Warning: Could not determine SIMPL Windows process PID; dialog detection may be limited")
 		}
 
-		// Detect save prompt ("Convert/Compile") and auto-confirm "Yes"
-		if pid != 0 {
-			if hwndDlg, title, ok := waitForDialog(pid, "Convert/Compile", 5*time.Second, true); ok {
-				fmt.Printf("Detected save prompt: %s\n", title)
-				// Bring dialog to foreground and press Enter (default is "Yes")
-				_ = setForeground(hwndDlg)
+		// Detect save prompt ("Convert/Compile") via monitor channel and auto-confirm "Yes"
+		if pid != 0 && monitorCh != nil {
+			fmt.Println("Watching for 'Convert/Compile' save prompt...")
+			ev, ok := waitOnMonitor(5*time.Second,
+				func(e WindowEvent) bool { return strings.EqualFold(e.Title, "Convert/Compile") },
+				func(e WindowEvent) bool { return strings.Contains(strings.ToLower(e.Title), "convert/compile") },
+			)
+			if ok {
+				fmt.Printf("Detected save prompt: %s\n", ev.Title)
+				_ = setForeground(ev.Hwnd)
 				time.Sleep(300 * time.Millisecond)
 				_ = sendEnterViaKeybdEvent()
 				fmt.Println("Auto-confirmed save prompt with 'Yes'")
+			} else {
+				fmt.Println("Debug: Save prompt not detected within timeout")
 			}
 		}
 
-		// Detect compile progress start ("Compiling...")
-		if pid != 0 {
+		// Detect compile progress start ("Compiling...") via monitor channel
+		if pid != 0 && monitorCh != nil {
 			fmt.Println("Waiting for 'Compiling...' dialog...")
-			if _, title, ok := waitForDialog(pid, "Compiling...", 30*time.Second, true); ok {
-				fmt.Printf("Compile started: %s\n", title)
+			ev, ok := waitOnMonitor(30*time.Second,
+				func(e WindowEvent) bool { return strings.EqualFold(e.Title, "Compiling...") },
+				func(e WindowEvent) bool { return strings.Contains(strings.ToLower(e.Title), "compiling") },
+			)
+			if ok {
+				fmt.Printf("Compile started: %s\n", ev.Title)
 			} else {
 				fmt.Println("Warning: Did not detect 'Compiling...' dialog within timeout")
 			}
 		}
 
-		// Detect compile completion ("Compile Complete")
-		if pid != 0 {
+		// Detect compile completion ("Compile Complete") via monitor channel
+		if pid != 0 && monitorCh != nil {
 			fmt.Println("Waiting for 'Compile Complete' dialog...")
-			if _, title, ok := waitForDialog(pid, "Compile Complete", 120*time.Second, true); ok {
-				fmt.Printf("Compile completed: %s\n", title)
+			ev, ok := waitOnMonitor(120*time.Second,
+				func(e WindowEvent) bool { return strings.EqualFold(e.Title, "Compile Complete") },
+				func(e WindowEvent) bool { return strings.Contains(strings.ToLower(e.Title), "compile complete") },
+			)
+			if ok {
+				fmt.Printf("Compile completed: %s\n", ev.Title)
 			} else {
 				fmt.Println("Warning: Did not detect 'Compile Complete' dialog within timeout")
 			}
