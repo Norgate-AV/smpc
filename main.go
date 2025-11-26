@@ -69,6 +69,10 @@ func collectChildInfos(hwnd uintptr) []childInfo {
 		var t string
 		if c == "Edit" {
 			t = getEditText(chWnd)
+		} else if c == "ListBox" {
+			// For ListBox, get all items and join them with newlines
+			items := getListBoxItems(chWnd)
+			t = strings.Join(items, "\n")
 		} else {
 			t = getWindowText(chWnd)
 		}
@@ -83,7 +87,41 @@ func collectChildInfos(hwnd uintptr) []childInfo {
 const (
 	WM_GETTEXT       = 0x000D
 	WM_GETTEXTLENGTH = 0x000E
+	LB_GETCOUNT      = 0x018B
+	LB_GETTEXT       = 0x0189
+	LB_GETTEXTLEN    = 0x018A
 )
+
+func getListBoxItems(hwnd uintptr) []string {
+	// Get the count of items in the ListBox
+	countResult, _, _ := procSendMessageW.Call(hwnd, LB_GETCOUNT, 0, 0)
+	count := int(countResult)
+	fmt.Printf("[DEBUG] getListBoxItems: hwnd=%d, count=%d\n", hwnd, count)
+
+	if count <= 0 {
+		return nil
+	}
+
+	items := make([]string, 0, count)
+	for i := range count {
+		// Get the length of this item
+		lenResult, _, _ := procSendMessageW.Call(hwnd, LB_GETTEXTLEN, uintptr(i), 0)
+		itemLen := int(lenResult)
+
+		if itemLen <= 0 {
+			continue
+		}
+
+		// Allocate buffer and get the text
+		buf := make([]uint16, itemLen+1)
+		procSendMessageW.Call(hwnd, LB_GETTEXT, uintptr(i), uintptr(unsafe.Pointer(&buf[0])))
+		text := syscall.UTF16ToString(buf)
+		fmt.Printf("[DEBUG] getListBoxItems: item[%d]=%q\n", i, text)
+		items = append(items, text)
+	}
+
+	return items
+}
 
 func getEditText(hwnd uintptr) string {
 	// Get the length of the text using SendMessageW directly
@@ -200,53 +238,53 @@ type INPUT struct {
 func setForeground(hwnd uintptr) bool {
 	// Restore window if minimized, then bring to foreground
 	r1, r2, lastErr := procShowWindow.Call(hwnd, uintptr(SW_RESTORE))
-	fmt.Printf("Debug: ShowWindow(SW_RESTORE) r1=%d r2=%d err=%v\n", r1, r2, lastErr)
+	fmt.Printf("[DEBUG] ShowWindow(SW_RESTORE) r1=%d r2=%d err=%v\n", r1, r2, lastErr)
 
 	ret, _, err := procSetForegroundWindow.Call(hwnd)
 	if ret == 0 {
-		fmt.Printf("Debug: SetForegroundWindow failed: %v\n", err)
+		fmt.Printf("[DEBUG] SetForegroundWindow failed: %v\n", err)
 		return false
 	}
 
-	fmt.Println("Debug: SetForegroundWindow succeeded")
+	fmt.Println("[DEBUG] SetForegroundWindow succeeded")
 
 	// Give it a moment and verify
 	time.Sleep(500 * time.Millisecond)
 	fgHwnd, _, _ := procGetForegroundWindow.Call()
 	if fgHwnd == hwnd {
-		fmt.Println("Debug: Window confirmed in foreground")
+		fmt.Println("[DEBUG] Window confirmed in foreground")
 	} else {
-		fmt.Printf("Debug: WARNING - Different window in foreground (expected %d, got %d)\n", hwnd, fgHwnd)
+		fmt.Printf("[DEBUG] WARNING - Different window in foreground (expected %d, got %d)\n", hwnd, fgHwnd)
 	}
 
 	return true
 }
 
 func sendF12ViaKeybdEvent() bool {
-	fmt.Println("Debug: Trying keybd_event approach...")
+	fmt.Println("[DEBUG] Trying keybd_event approach...")
 
 	// VK_F12 = 0x7B
 	vkCode := uintptr(0x7B)
 
 	// keybd_event(vk, scan, flags, extraInfo)
 	// Key down
-	fmt.Println("Debug: Sending keybd_event KEYDOWN")
+	fmt.Println("[DEBUG] Sending keybd_event KEYDOWN")
 	procKeybd_event.Call(vkCode, 0, 0x1, 0) // KEYEVENTF_EXTENDEDKEY
 
 	time.Sleep(50 * time.Millisecond)
 
 	// Key up
-	fmt.Println("Debug: Sending keybd_event KEYUP")
+	fmt.Println("[DEBUG] Sending keybd_event KEYUP")
 	procKeybd_event.Call(vkCode, 0, 0x1|0x2, 0) // KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP
 
-	fmt.Println("Debug: keybd_event succeeded")
+	fmt.Println("[DEBUG] keybd_event succeeded")
 	return true
 }
 
 func sendEnterViaKeybdEvent() bool {
 	// VK_RETURN = 0x0D
 	vkCode := uintptr(0x0D)
-	fmt.Println("Debug: Sending Enter via keybd_event")
+	fmt.Println("[DEBUG] Sending Enter via keybd_event")
 	procKeybd_event.Call(vkCode, 0, 0x1, 0)
 	time.Sleep(50 * time.Millisecond)
 	procKeybd_event.Call(vkCode, 0, 0x1|0x2, 0)
@@ -453,7 +491,7 @@ func findSIMPLWindow(processName string, debug bool) (uintptr, string) {
 
 	if targetPID == 0 {
 		if debug {
-			fmt.Println("Debug: smpwin.exe process not found")
+			fmt.Println("[DEBUG] smpwin.exe process not found")
 		}
 
 		return 0, ""
@@ -464,7 +502,7 @@ func findSIMPLWindow(processName string, debug bool) (uintptr, string) {
 	windows := enumerateWindows()
 
 	if debug {
-		fmt.Printf("Debug: Found %d visible windows from smpwin.exe (PID: %d):\n", len(windows), targetPID)
+		fmt.Printf("[DEBUG] Found %d visible windows from smpwin.exe (PID: %d):\n", len(windows), targetPID)
 	}
 
 	// Look for windows belonging to our process
@@ -508,7 +546,7 @@ func findSIMPLWindow(processName string, debug bool) (uintptr, string) {
 	// If we found a main window with a more specific title, use it
 	if mainWindow.hwnd != 0 {
 		if debug {
-			fmt.Printf("Debug: Found main window: %s\n", mainWindow.title)
+			fmt.Printf("[DEBUG] Found main window: %s\n", mainWindow.title)
 		}
 
 		return mainWindow.hwnd, mainWindow.title
@@ -517,7 +555,7 @@ func findSIMPLWindow(processName string, debug bool) (uintptr, string) {
 	// If we only found the generic splash screen, return false to keep waiting
 	if splashWindow.hwnd != 0 {
 		if debug {
-			fmt.Printf("Debug: Only found splash screen, continuing to wait...\n")
+			fmt.Printf("[DEBUG] Only found splash screen, continuing to wait...\n")
 		}
 
 		return 0, ""
@@ -549,7 +587,7 @@ func startWindowMonitor(pid uint32, interval time.Duration) {
 	seen := make(map[uintptr]bool)
 
 	go func() {
-		fmt.Println("Debug: Window monitor started")
+		fmt.Println("[DEBUG] Window monitor started")
 		for {
 			windows := enumerateWindows()
 
@@ -669,9 +707,9 @@ func isWindowResponsive(hwnd uintptr, debug bool) bool {
 	responsive := ret != 0
 	if debug {
 		if responsive {
-			fmt.Println("Debug: Window is responsive")
+			fmt.Println("[DEBUG] Window is responsive")
 		} else {
-			fmt.Println("Debug: Window is not responding")
+			fmt.Println("[DEBUG] Window is not responding")
 		}
 	}
 
@@ -698,7 +736,7 @@ func waitForWindowToBeReady(hwnd uintptr, timeout time.Duration) bool {
 			}
 
 			if consecutiveResponses >= 2 {
-				fmt.Println("Debug: Window is stable and ready")
+				fmt.Println("[DEBUG] Window is stable and ready")
 				return true
 			}
 		}
@@ -707,7 +745,7 @@ func waitForWindowToBeReady(hwnd uintptr, timeout time.Duration) bool {
 		elapsed++
 	}
 
-	fmt.Println("Debug: Timeout waiting for window to be ready")
+	fmt.Println("[DEBUG] Timeout waiting for window to be ready")
 	return false
 }
 
@@ -722,7 +760,7 @@ func waitForWindowToAppear(timeout time.Duration) (uintptr, bool) {
 		// Check for the main SIMPL Windows window
 		hwnd, title := findSIMPLWindow("smpwin.exe", debug)
 		if hwnd != 0 {
-			fmt.Printf("Debug: Found main SIMPL Windows window: %s\n", title)
+			fmt.Printf("[DEBUG] Found main SIMPL Windows window: %s\n", title)
 			return hwnd, true
 		}
 
@@ -730,10 +768,10 @@ func waitForWindowToAppear(timeout time.Duration) (uintptr, bool) {
 		elapsed++
 	}
 
-	fmt.Println("Debug: Timeout reached, performing final detailed check...")
+	fmt.Println("[DEBUG] Timeout reached, performing final detailed check...")
 	hwnd, title := findSIMPLWindow("smpwin.exe", true)
 	if hwnd != 0 {
-		fmt.Printf("Debug: Found window at timeout: %s\n", title)
+		fmt.Printf("[DEBUG] Found window at timeout: %s\n", title)
 		return hwnd, true
 	}
 
@@ -773,10 +811,10 @@ func main() {
 		// Init channel
 		monitorCh = make(chan WindowEvent, 64)
 		if pid == 0 {
-			fmt.Println("Debug: Window monitor falling back to all processes (SIMPL PID not found yet)")
+			fmt.Println("[DEBUG] Window monitor falling back to all processes (SIMPL PID not found yet)")
 			startWindowMonitor(0, 500*time.Millisecond)
 		} else {
-			fmt.Printf("Debug: Window monitor targeting SIMPL PID %d\n", pid)
+			fmt.Printf("[DEBUG] Window monitor targeting SIMPL PID %d\n", pid)
 			startWindowMonitor(pid, 500*time.Millisecond)
 		}
 	}()
@@ -838,9 +876,9 @@ func main() {
 
 	// Confirm elevation before sending keystrokes
 	if isElevated() {
-		fmt.Println("Debug: Process is elevated, proceeding with keystroke injection")
+		fmt.Println("[DEBUG] Process is elevated, proceeding with keystroke injection")
 	} else {
-		fmt.Println("Debug: WARNING - Process is NOT elevated, keystroke injection may fail")
+		fmt.Println("[DEBUG] WARNING - Process is NOT elevated, keystroke injection may fail")
 	}
 
 	// Bring window to foreground and send F12 (compile)
@@ -875,7 +913,7 @@ func main() {
 				_ = sendEnterViaKeybdEvent()
 				fmt.Println("Auto-confirmed save prompt with 'Yes'")
 			} else {
-				fmt.Println("Debug: Save prompt not detected within timeout")
+				fmt.Println("[DEBUG] Save prompt not detected within timeout")
 			}
 		}
 
@@ -894,7 +932,13 @@ func main() {
 			}
 		}
 
-		// Detect compile completion ("Compile Complete") via monitor channel
+		// Variables to store compile results
+		var warnings, notices int
+		var compileTime float64
+		warningMessages := []string{}
+		noticeMessages := []string{}
+
+		// Detect and parse Compile Complete dialog
 		if pid != 0 && monitorCh != nil {
 			fmt.Println("Waiting for 'Compile Complete' dialog...")
 			ev, ok := waitOnMonitor(10*time.Second,
@@ -902,19 +946,8 @@ func main() {
 				func(e WindowEvent) bool { return strings.Contains(strings.ToLower(e.Title), "compile complete") },
 			)
 
-			// If not found, try Program Compilation as fallback
-			if !ok {
-				fmt.Println("Compile Complete not detected, trying 'Program Compilation' dialog...")
-				ev, ok = waitOnMonitor(5*time.Second,
-					func(e WindowEvent) bool { return strings.EqualFold(e.Title, "Program Compilation") },
-					func(e WindowEvent) bool { return strings.Contains(strings.ToLower(e.Title), "program compilation") },
-				)
-			}
-
 			if ok {
-				fmt.Printf("Compile completed: %s\n", ev.Title)
-				// Parse child texts for error/warning/info counts
-				// Enhanced debug: print class name and text for each child
+				fmt.Printf("Detected: %s\n", ev.Title)
 				childInfos := collectChildInfos(ev.Hwnd)
 				fmt.Printf("[DEBUG] Child controls in %s dialog:\n", ev.Title)
 
@@ -922,15 +955,11 @@ func main() {
 					fmt.Printf("[DEBUG] class=%q text=%q (length=%d)\n", ci.className, ci.text, len(ci.text))
 				}
 
-				// Try to parse each line of each child text
-				var warnings, notices int
-				var compileTime float64
-
+				// Parse stats from Compile Complete dialog
 				for _, ci := range childInfos {
-					// Split on both \r\n and \n
 					text := strings.ReplaceAll(ci.text, "\r\n", "\n")
-					lines := strings.Split(text, "\n")
-					for _, t := range lines {
+					lines := strings.SplitSeq(text, "\n")
+					for t := range lines {
 						t = strings.TrimSpace(t)
 						if t == "" {
 							continue
@@ -946,11 +975,70 @@ func main() {
 						}
 					}
 				}
-
-				fmt.Printf("Compile results: Warnings=%d, Notices=%d, Compile Time=%.2f seconds\n", warnings, notices, compileTime)
 			} else {
-				fmt.Println("Warning: Did not detect 'Compile Complete' or 'Program Compilation' dialog within timeout")
+				fmt.Println("Warning: Did not detect 'Compile Complete' dialog within timeout")
 			}
+		}
+
+		// Detect and parse Program Compilation dialog (if warnings/notices exist)
+		if pid != 0 && monitorCh != nil && (warnings > 0 || notices > 0) {
+			fmt.Println("Waiting for 'Program Compilation' dialog...")
+			ev, ok := waitOnMonitor(10*time.Second,
+				func(e WindowEvent) bool { return strings.EqualFold(e.Title, "Program Compilation") },
+				func(e WindowEvent) bool { return strings.Contains(strings.ToLower(e.Title), "program compilation") },
+			)
+
+			if ok {
+				fmt.Printf("Detected: %s\n", ev.Title)
+				childInfos := collectChildInfos(ev.Hwnd)
+				fmt.Printf("[DEBUG] Child controls in %s dialog:\n", ev.Title)
+
+				for _, ci := range childInfos {
+					fmt.Printf("[DEBUG] class=%q text=%q (length=%d)\n", ci.className, ci.text, len(ci.text))
+				}
+
+				// Extract messages from ListBox
+				for _, ci := range childInfos {
+					if ci.className == "ListBox" && ci.text != "" {
+						text := strings.ReplaceAll(ci.text, "\r\n", "\n")
+						lines := strings.Split(text, "\n")
+						for _, line := range lines {
+							line = strings.TrimSpace(line)
+							if line == "" {
+								continue
+							}
+							// For now, collect all messages
+							// We'll classify them based on prefix or content later
+							warningMessages = append(warningMessages, line)
+						}
+					}
+				}
+
+				if len(warningMessages) > 0 {
+					fmt.Println("\nWarning messages:")
+					for i, msg := range warningMessages {
+						fmt.Printf("  %d. %s\n", i+1, msg)
+					}
+				}
+
+				if len(noticeMessages) > 0 {
+					fmt.Println("\nNotice messages:")
+					for i, msg := range noticeMessages {
+						fmt.Printf("  %d. %s\n", i+1, msg)
+					}
+				}
+			} else {
+				fmt.Println("Note: Program Compilation dialog not detected (may not have appeared)")
+			}
+		}
+
+		// Print final summary
+		if pid != 0 && monitorCh != nil {
+			fmt.Printf("\n=== Compile Summary ===\n")
+			fmt.Printf("Warnings: %d\n", warnings)
+			fmt.Printf("Notices: %d\n", notices)
+			fmt.Printf("Compile Time: %.2f seconds\n", compileTime)
+			fmt.Println("=======================")
 		}
 	}
 
