@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
@@ -92,6 +93,7 @@ var (
 	procKeybd_event              = user32.NewProc("keybd_event")
 	procShowWindow               = user32.NewProc("ShowWindow")
 	procEnumChildWindows         = user32.NewProc("EnumChildWindows")
+	procGetClassNameW            = user32.NewProc("GetClassNameW")
 )
 
 const (
@@ -270,6 +272,12 @@ func getWindowText(hwnd uintptr) string {
 	return syscall.UTF16ToString(buf)
 }
 
+func getClassName(hwnd uintptr) string {
+	buf := make([]uint16, 256)
+	procGetClassNameW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	return syscall.UTF16ToString(buf)
+}
+
 func isWindowVisible(hwnd uintptr) bool {
 	ret, _, _ := procIsWindowVisible.Call(hwnd)
 	return ret != 0
@@ -287,7 +295,10 @@ type windowInfo struct {
 	pid   uint32
 }
 
-var foundWindows []windowInfo
+var (
+	foundWindows []windowInfo
+	windowsMu    sync.Mutex
+)
 
 func enumWindowsCallback(hwnd uintptr, lparam uintptr) uintptr {
 	if isWindowVisible(hwnd) {
@@ -341,19 +352,18 @@ func findSIMPLWindow(processName string, debug bool) (uintptr, string) {
 	}
 
 	// Now enumerate all windows
-	foundWindows = nil
-	callback := syscall.NewCallback(enumWindowsCallback)
-	procEnumWindows.Call(callback, 0)
+	// Enumerate windows (thread-safe)
+	windows := enumerateWindows()
 
 	if debug {
-		fmt.Printf("Debug: Found %d visible windows from smpwin.exe (PID: %d):\n", len(foundWindows), targetPID)
+		fmt.Printf("Debug: Found %d visible windows from smpwin.exe (PID: %d):\n", len(windows), targetPID)
 	}
 
 	// Look for windows belonging to our process
 	var mainWindow windowInfo
 	var splashWindow windowInfo
 
-	for _, w := range foundWindows {
+	for _, w := range windows {
 		if w.pid == targetPID {
 			if debug {
 				fmt.Printf("  - %s\n", w.title)
@@ -415,16 +425,14 @@ func waitForDialog(pid uint32, titleSubstring string, timeout time.Duration, deb
 	normalized := strings.ToLower(titleSubstring)
 
 	for time.Now().Before(deadline) {
-		foundWindows = nil
-		callback := syscall.NewCallback(enumWindowsCallback)
-		procEnumWindows.Call(callback, 0)
+		windows := enumerateWindows()
 
-		// First pass: match within specified PID (if provided)
-		for _, w := range foundWindows {
+		// First pass: match within specified PID (if provided), prefer exact title match
+		for _, w := range windows {
 			if pid != 0 && w.pid != pid {
 				continue
 			}
-			if windowOrChildrenContain(w.hwnd, normalized) {
+			if strings.EqualFold(w.title, titleSubstring) || windowOrChildrenContain(w.hwnd, normalized) {
 				if debug {
 					fmt.Printf("Debug: Detected dialog '%s' (matched '%s')\n", w.title, titleSubstring)
 				}
@@ -434,8 +442,8 @@ func waitForDialog(pid uint32, titleSubstring string, timeout time.Duration, deb
 
 		// Second pass: relaxed (any process) to catch helper-process dialogs
 		if pid != 0 {
-			for _, w := range foundWindows {
-				if windowOrChildrenContain(w.hwnd, normalized) {
+			for _, w := range windows {
+				if strings.EqualFold(w.title, titleSubstring) || windowOrChildrenContain(w.hwnd, normalized) {
 					if debug {
 						fmt.Printf("Debug: Detected dialog (any PID) '%s' (matched '%s')\n", w.title, titleSubstring)
 					}
@@ -451,6 +459,19 @@ func waitForDialog(pid uint32, titleSubstring string, timeout time.Duration, deb
 		fmt.Printf("Debug: Timeout waiting for dialog containing '%s'\n", titleSubstring)
 	}
 	return 0, "", false
+}
+
+// enumerateWindows performs a thread-safe enumeration of visible top-level windows
+func enumerateWindows() []windowInfo {
+	windowsMu.Lock()
+	defer windowsMu.Unlock()
+	foundWindows = nil
+	callback := syscall.NewCallback(enumWindowsCallback)
+	procEnumWindows.Call(callback, 0)
+	// Make a copy to avoid races with subsequent enumerations
+	windows := make([]windowInfo, len(foundWindows))
+	copy(windows, foundWindows)
+	return windows
 }
 
 var (
@@ -478,6 +499,58 @@ func windowOrChildrenContain(hwnd uintptr, substrLower string) bool {
 	cb := syscall.NewCallback(enumChildCallback)
 	procEnumChildWindows.Call(hwnd, cb, 0)
 	return childFound
+}
+
+// startWindowMonitor launches a background goroutine that periodically
+// enumerates windows and logs any newly seen windows/dialogs and their child texts.
+// If pid==0, it will log windows from all processes; otherwise it filters to that PID.
+func startWindowMonitor(pid uint32, interval time.Duration) {
+	seen := make(map[uintptr]bool)
+	go func() {
+		fmt.Println("Debug: Window monitor started")
+		for {
+			windows := enumerateWindows()
+
+			for _, w := range windows {
+				if pid != 0 && w.pid != pid {
+					continue
+				}
+				if !seen[w.hwnd] {
+					seen[w.hwnd] = true
+					// Log top-level window info
+					fmt.Printf("[MON] hwnd=%d pid=%d class=%s title=%q\n", w.hwnd, w.pid, getClassName(w.hwnd), w.title)
+
+					// Enumerate child controls and log their text
+					childTexts := collectChildTexts(w.hwnd)
+					if len(childTexts) > 0 {
+						for _, ct := range childTexts {
+							if ct != "" {
+								fmt.Printf("[MON]   child=%q\n", ct)
+							}
+						}
+					}
+				}
+			}
+
+			time.Sleep(interval)
+		}
+	}()
+}
+
+func collectChildTexts(hwnd uintptr) []string {
+	texts := []string{}
+	// inner callback captures texts
+	var cb func(hwnd uintptr, lparam uintptr) uintptr
+	cb = func(chWnd uintptr, lparam uintptr) uintptr {
+		t := getWindowText(chWnd)
+		if t != "" {
+			texts = append(texts, t)
+		}
+		// continue enumeration
+		return 1
+	}
+	procEnumChildWindows.Call(hwnd, syscall.NewCallback(cb), 0)
+	return texts
 }
 
 // getSimplPid retrieves the PID of smpwin.exe, returns 0 if not found
@@ -613,6 +686,26 @@ func main() {
 	}
 
 	fmt.Println("Running with administrator privileges ✓")
+
+	// Start background window monitor focused on SIMPL Windows process (if available)
+	// It will help us observe dialogs and window changes in real time.
+	go func() {
+		// Try to obtain PID repeatedly until found, then monitor that PID
+		var pid uint32
+		for i := 0; i < 50 && pid == 0; i++ { // up to ~5s
+			pid = getSimplPid()
+			if pid == 0 {
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
+		if pid == 0 {
+			fmt.Println("Debug: Window monitor falling back to all processes (SIMPL PID not found yet)")
+			startWindowMonitor(0, 500*time.Millisecond)
+		} else {
+			fmt.Printf("Debug: Window monitor targeting SIMPL PID %d\n", pid)
+			startWindowMonitor(pid, 500*time.Millisecond)
+		}
+	}()
 
 	// Check if a file path argument was provided
 	if len(os.Args) < 2 {
