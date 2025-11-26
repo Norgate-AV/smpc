@@ -1,6 +1,6 @@
 # smpc
 
-A tool to automate the compilation of Crestron SIMPL Windows programs.
+A tool to automate compiling Crestron SIMPL Windows programs.
 
 ## LICENSE
 
