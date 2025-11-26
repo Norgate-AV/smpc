@@ -11,3 +11,8 @@ build: clean
 .PHONY: clean
 clean:
 	@powershell -Command "if (Test-Path $(BUILD_DIR)) { Remove-Item -Recurse -Force $(BUILD_DIR) }"
+
+.PHONY: install
+install: build
+	go install ./...
+
