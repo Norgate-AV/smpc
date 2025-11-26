@@ -65,14 +65,41 @@ func collectChildInfos(hwnd uintptr) []childInfo {
 	var cb func(hwnd uintptr, lparam uintptr) uintptr
 
 	cb = func(chWnd uintptr, lparam uintptr) uintptr {
-		t := getWindowText(chWnd)
 		c := getClassName(chWnd)
+		var t string
+		if c == "Edit" {
+			t = getEditText(chWnd)
+		} else {
+			t = getWindowText(chWnd)
+		}
 		infos = append(infos, childInfo{hwnd: chWnd, className: c, text: t})
 		return 1
 	}
 
 	procEnumChildWindows.Call(hwnd, syscall.NewCallback(cb), 0)
 	return infos
+}
+
+const (
+	WM_GETTEXT       = 0x000D
+	WM_GETTEXTLENGTH = 0x000E
+)
+
+func getEditText(hwnd uintptr) string {
+	// Get the length of the text using SendMessageW directly
+	lengthResult, _, _ := procSendMessageW.Call(hwnd, WM_GETTEXTLENGTH, 0, 0)
+	length := int(lengthResult)
+	fmt.Printf("[DEBUG] getEditText: hwnd=%d, length=%d\n", hwnd, length)
+	if length == 0 {
+		return ""
+	}
+	// Allocate buffer (add extra space for safety)
+	buf := make([]uint16, length+256)
+	result, _, _ := procSendMessageW.Call(hwnd, WM_GETTEXT, uintptr(len(buf)), uintptr(unsafe.Pointer(&buf[0])))
+	fmt.Printf("[DEBUG] getEditText: SendMessage returned %d\n", result)
+	text := syscall.UTF16ToString(buf)
+	fmt.Printf("[DEBUG] getEditText: extracted text length=%d, text=%q\n", len(text), text)
+	return text
 }
 
 func relaunchAsAdmin() error {
@@ -112,6 +139,7 @@ var (
 	procGetWindowThreadProcessId = user32.NewProc("GetWindowThreadProcessId")
 	procIsWindowVisible          = user32.NewProc("IsWindowVisible")
 	procSendMessageTimeoutW      = user32.NewProc("SendMessageTimeoutW")
+	procSendMessageW             = user32.NewProc("SendMessageW")
 	procSetForegroundWindow      = user32.NewProc("SetForegroundWindow")
 	procGetForegroundWindow      = user32.NewProc("GetForegroundWindow")
 	procKeybd_event              = user32.NewProc("keybd_event")
@@ -869,20 +897,29 @@ func main() {
 		// Detect compile completion ("Compile Complete") via monitor channel
 		if pid != 0 && monitorCh != nil {
 			fmt.Println("Waiting for 'Compile Complete' dialog...")
-			ev, ok := waitOnMonitor(120*time.Second,
+			ev, ok := waitOnMonitor(10*time.Second,
 				func(e WindowEvent) bool { return strings.EqualFold(e.Title, "Compile Complete") },
 				func(e WindowEvent) bool { return strings.Contains(strings.ToLower(e.Title), "compile complete") },
 			)
+
+			// If not found, try Program Compilation as fallback
+			if !ok {
+				fmt.Println("Compile Complete not detected, trying 'Program Compilation' dialog...")
+				ev, ok = waitOnMonitor(5*time.Second,
+					func(e WindowEvent) bool { return strings.EqualFold(e.Title, "Program Compilation") },
+					func(e WindowEvent) bool { return strings.Contains(strings.ToLower(e.Title), "program compilation") },
+				)
+			}
 
 			if ok {
 				fmt.Printf("Compile completed: %s\n", ev.Title)
 				// Parse child texts for error/warning/info counts
 				// Enhanced debug: print class name and text for each child
 				childInfos := collectChildInfos(ev.Hwnd)
-				fmt.Println("[DEBUG] Child controls in Compile Complete dialog:")
+				fmt.Printf("[DEBUG] Child controls in %s dialog:\n", ev.Title)
 
 				for _, ci := range childInfos {
-					fmt.Printf("[DEBUG] class=%q text=%q\n", ci.className, ci.text)
+					fmt.Printf("[DEBUG] class=%q text=%q (length=%d)\n", ci.className, ci.text, len(ci.text))
 				}
 
 				// Try to parse each line of each child text
@@ -890,12 +927,18 @@ func main() {
 				var compileTime float64
 
 				for _, ci := range childInfos {
-					lines := strings.Split(ci.text, "\n")
+					// Split on both \r\n and \n
+					text := strings.ReplaceAll(ci.text, "\r\n", "\n")
+					lines := strings.Split(text, "\n")
 					for _, t := range lines {
-						if n, ok := parseStatLine(t, "Program Warnings:"); ok {
+						t = strings.TrimSpace(t)
+						if t == "" {
+							continue
+						}
+						if n, ok := parseStatLine(t, "Program Warnings"); ok {
 							warnings = n
 						}
-						if n, ok := parseStatLine(t, "Program Notices:"); ok {
+						if n, ok := parseStatLine(t, "Program Notices"); ok {
 							notices = n
 						}
 						if secs, ok := parseCompileTimeLine(t); ok {
@@ -906,7 +949,7 @@ func main() {
 
 				fmt.Printf("Compile results: Warnings=%d, Notices=%d, Compile Time=%.2f seconds\n", warnings, notices, compileTime)
 			} else {
-				fmt.Println("Warning: Did not detect 'Compile Complete' dialog within timeout")
+				fmt.Println("Warning: Did not detect 'Compile Complete' or 'Program Compilation' dialog within timeout")
 			}
 		}
 	}
