@@ -967,10 +967,12 @@ func main() {
 		}
 
 		// Variables to store compile results
-		var warnings, notices int
+		var warnings, notices, errors int
 		var compileTime float64
 		warningMessages := []string{}
 		noticeMessages := []string{}
+		errorMessages := []string{}
+		hasErrors := false
 
 		// Detect and parse Compile Complete dialog
 		if pid != 0 && monitorCh != nil {
@@ -1004,6 +1006,12 @@ func main() {
 						if n, ok := parseStatLine(t, "Program Notices"); ok {
 							notices = n
 						}
+						if n, ok := parseStatLine(t, "Program Errors"); ok {
+							errors = n
+							if n > 0 {
+								hasErrors = true
+							}
+						}
 						if secs, ok := parseCompileTimeLine(t); ok {
 							compileTime = secs
 						}
@@ -1018,8 +1026,8 @@ func main() {
 			}
 		}
 
-		// Detect and parse Program Compilation dialog (if warnings/notices exist)
-		if pid != 0 && monitorCh != nil && (warnings > 0 || notices > 0) {
+		// Detect and parse Program Compilation dialog (if warnings/notices/errors exist)
+		if pid != 0 && monitorCh != nil && (warnings > 0 || notices > 0 || errors > 0) {
 			fmt.Println("Waiting for 'Program Compilation' dialog...")
 			ev, ok := waitOnMonitor(10*time.Second,
 				func(e WindowEvent) bool { return strings.EqualFold(e.Title, "Program Compilation") },
@@ -1035,7 +1043,7 @@ func main() {
 					fmt.Printf("[DEBUG] class=%q text=%q (length=%d)\n", ci.className, ci.text, len(ci.text))
 				}
 
-				// Extract messages from ListBox
+				// Extract messages from ListBox and categorize them
 				for _, ci := range childInfos {
 					if ci.className == "ListBox" && len(ci.items) > 0 {
 						// Use items directly instead of splitting text
@@ -1044,10 +1052,34 @@ func main() {
 							if line == "" {
 								continue
 							}
-							// For now, collect all messages
-							// We'll classify them based on prefix or content later
-							warningMessages = append(warningMessages, line)
+							// Categorize based on prefix
+							lineUpper := strings.ToUpper(line)
+							if strings.HasPrefix(lineUpper, "ERROR") {
+								errorMessages = append(errorMessages, line)
+								hasErrors = true
+							} else if strings.HasPrefix(lineUpper, "WARNING") {
+								warningMessages = append(warningMessages, line)
+							} else if strings.HasPrefix(lineUpper, "NOTICE") {
+								noticeMessages = append(noticeMessages, line)
+							} else {
+								// If it doesn't have a prefix, it's likely a continuation of the previous message
+								// Append to the last message in the appropriate list
+								if len(errorMessages) > 0 {
+									errorMessages[len(errorMessages)-1] += " " + line
+								} else if len(warningMessages) > 0 {
+									warningMessages[len(warningMessages)-1] += " " + line
+								} else if len(noticeMessages) > 0 {
+									noticeMessages[len(noticeMessages)-1] += " " + line
+								}
+							}
 						}
+					}
+				}
+
+				if len(errorMessages) > 0 {
+					fmt.Println("\nError messages:")
+					for i, msg := range errorMessages {
+						fmt.Printf("  %d. %s\n", i+1, msg)
 					}
 				}
 
@@ -1072,6 +1104,9 @@ func main() {
 		// Print final summary
 		if pid != 0 && monitorCh != nil {
 			fmt.Printf("\n=== Compile Summary ===\n")
+			if errors > 0 {
+				fmt.Printf("Errors: %d\n", errors)
+			}
 			fmt.Printf("Warnings: %d\n", warnings)
 			fmt.Printf("Notices: %d\n", notices)
 			fmt.Printf("Compile Time: %.2f seconds\n", compileTime)
@@ -1094,6 +1129,11 @@ func main() {
 
 		fmt.Println("Press Enter to exit...")
 		fmt.Scanln()
+
+		// Exit with error code if compilation failed
+		if hasErrors {
+			os.Exit(1)
+		}
 	}
 }
 
