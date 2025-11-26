@@ -72,6 +72,12 @@ func main() {
 	// Get the file path from the first command line argument
 	filePath := os.Args[1]
 
+	// Check if the file has .smw extension
+	if filepath.Ext(filePath) != ".smw" {
+		fmt.Printf("Error: File must have .smw extension\n")
+		os.Exit(1)
+	}
+
 	// Check if the file exists
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		fmt.Printf("Error: File does not exist: %s\n", filePath)
