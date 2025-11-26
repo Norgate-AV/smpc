@@ -66,17 +66,22 @@ func collectChildInfos(hwnd uintptr) []childInfo {
 
 	cb = func(chWnd uintptr, lparam uintptr) uintptr {
 		c := getClassName(chWnd)
+
 		var t string
-		if c == "Edit" {
+
+		switch c {
+		case "Edit":
 			t = getEditText(chWnd)
-		} else if c == "ListBox" {
+		case "ListBox":
 			// For ListBox, get all items and join them with newlines
 			items := getListBoxItems(chWnd)
 			t = strings.Join(items, "\n")
-		} else {
+		default:
 			t = getWindowText(chWnd)
 		}
+
 		infos = append(infos, childInfo{hwnd: chWnd, className: c, text: t})
+
 		return 1
 	}
 
@@ -140,6 +145,12 @@ func getEditText(hwnd uintptr) string {
 	return text
 }
 
+func closeWindow(hwnd uintptr, title string) {
+	fmt.Printf("Closing window: %s\n", title)
+	procPostMessageW.Call(hwnd, WM_CLOSE, 0, 0)
+	time.Sleep(500 * time.Millisecond)
+}
+
 func relaunchAsAdmin() error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -178,6 +189,7 @@ var (
 	procIsWindowVisible          = user32.NewProc("IsWindowVisible")
 	procSendMessageTimeoutW      = user32.NewProc("SendMessageTimeoutW")
 	procSendMessageW             = user32.NewProc("SendMessageW")
+	procPostMessageW             = user32.NewProc("PostMessageW")
 	procSetForegroundWindow      = user32.NewProc("SetForegroundWindow")
 	procGetForegroundWindow      = user32.NewProc("GetForegroundWindow")
 	procKeybd_event              = user32.NewProc("keybd_event")
@@ -188,6 +200,7 @@ var (
 
 const (
 	WM_NULL          = 0x0000
+	WM_CLOSE         = 0x0010
 	WM_KEYDOWN       = 0x0100
 	WM_KEYUP         = 0x0101
 	SMTO_ABORTIFHUNG = 0x0002
@@ -1040,10 +1053,24 @@ func main() {
 			fmt.Printf("Compile Time: %.2f seconds\n", compileTime)
 			fmt.Println("=======================")
 		}
-	}
 
-	fmt.Println("\nPress Enter to exit...")
-	fmt.Scanln()
+		// Close SIMPL Windows after successful compilation
+		fmt.Println("\nClosing SIMPL Windows...")
+
+		// Give a moment for any remaining UI updates
+		time.Sleep(1 * time.Second)
+
+		// Close the main SIMPL Windows application
+		if hwnd != 0 {
+			closeWindow(hwnd, "SIMPL Windows")
+			fmt.Println("SIMPL Windows closed successfully")
+		} else {
+			fmt.Println("Warning: Could not close SIMPL Windows (main window handle not found)")
+		}
+
+		fmt.Println("Press Enter to exit...")
+		fmt.Scanln()
+	}
 }
 
 // parseStatLine parses a line like "Program Warnings: 1" and returns (1, true) if matched, else (0, false)
