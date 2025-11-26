@@ -932,6 +932,25 @@ func main() {
 			}
 		}
 
+		// Detect "Commented out Symbols and/or Devices" dialog and auto-confirm "Yes"
+		if pid != 0 && monitorCh != nil {
+			fmt.Println("Watching for 'Commented out Symbols' dialog...")
+			ev, ok := waitOnMonitor(5*time.Second,
+				func(e WindowEvent) bool { return strings.EqualFold(e.Title, "Commented out Symbols and/or Devices") },
+				func(e WindowEvent) bool { return strings.Contains(strings.ToLower(e.Title), "commented out") },
+			)
+
+			if ok {
+				fmt.Printf("Detected dialog: %s\n", ev.Title)
+				_ = setForeground(ev.Hwnd)
+				time.Sleep(300 * time.Millisecond)
+				_ = sendEnterViaKeybdEvent()
+				fmt.Println("Auto-confirmed 'Commented out Symbols' dialog with 'Yes'")
+			} else {
+				fmt.Println("[DEBUG] 'Commented out Symbols' dialog not detected within timeout")
+			}
+		}
+
 		// Detect compile progress start ("Compiling...") via monitor channel
 		if pid != 0 && monitorCh != nil {
 			fmt.Println("Waiting for 'Compiling...' dialog...")
@@ -956,7 +975,7 @@ func main() {
 		// Detect and parse Compile Complete dialog
 		if pid != 0 && monitorCh != nil {
 			fmt.Println("Waiting for 'Compile Complete' dialog...")
-			ev, ok := waitOnMonitor(10*time.Second,
+			ev, ok := waitOnMonitor(5*time.Minute, // Increased timeout for large programs
 				func(e WindowEvent) bool { return strings.EqualFold(e.Title, "Compile Complete") },
 				func(e WindowEvent) bool { return strings.Contains(strings.ToLower(e.Title), "compile complete") },
 			)
@@ -992,6 +1011,10 @@ func main() {
 				}
 			} else {
 				fmt.Println("Warning: Did not detect 'Compile Complete' dialog within timeout")
+				fmt.Println("Compilation may have failed or is taking longer than expected.")
+				fmt.Println("\nPress Enter to exit...")
+				fmt.Scanln()
+				return
 			}
 		}
 
