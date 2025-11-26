@@ -12,6 +12,63 @@ import (
 
 const SIMPL_WINDOWS_PATH = "C:\\Program Files (x86)\\Crestron\\Simpl\\smpwin.exe"
 
+type TOKEN_ELEVATION struct {
+	TokenIsElevated uint32
+}
+
+func isElevated() bool {
+	var token uintptr
+
+	currentProcess, _, _ := procGetCurrentProcess.Call()
+	ret, _, _ := procOpenProcessToken.Call(
+		currentProcess,
+		uintptr(TOKEN_QUERY),
+		uintptr(unsafe.Pointer(&token)),
+	)
+
+	if ret == 0 {
+		return false
+	}
+
+	defer procCloseHandle.Call(token)
+
+	var elevation TOKEN_ELEVATION
+	var returnLength uint32
+
+	ret, _, _ = procGetTokenInformation.Call(
+		token,
+		uintptr(TokenElevation),
+		uintptr(unsafe.Pointer(&elevation)),
+		uintptr(unsafe.Sizeof(elevation)),
+		uintptr(unsafe.Pointer(&returnLength)),
+	)
+
+	if ret == 0 {
+		return false
+	}
+
+	return elevation.TokenIsElevated != 0
+}
+
+func relaunchAsAdmin() error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+
+	// Check if running via 'go run' (exe will be in temp dir)
+	if strings.Contains(exe, "go-build") {
+		fmt.Println("Detected 'go run' - please build the executable first with: go build -o smpc.exe")
+		fmt.Println("Then run: .\\smpc.exe <file-path>")
+		return fmt.Errorf("cannot relaunch when run via 'go run', please build first")
+	}
+
+	// Build args string (excluding the exe name)
+	args := strings.Join(os.Args[1:], " ")
+
+	return shellExecute(0, "runas", exe, args, "", 1)
+}
+
 var (
 	shell32                      = syscall.NewLazyDLL("shell32.dll")
 	procShellExecute             = shell32.NewProc("ShellExecuteW")
@@ -20,19 +77,116 @@ var (
 	procProcess32First           = kernel32.NewProc("Process32FirstW")
 	procProcess32Next            = kernel32.NewProc("Process32NextW")
 	procCloseHandle              = kernel32.NewProc("CloseHandle")
+	procGetCurrentProcess        = kernel32.NewProc("GetCurrentProcess")
+	procOpenProcessToken         = kernel32.NewProc("OpenProcessToken")
+	advapi32                     = syscall.NewLazyDLL("advapi32.dll")
+	procGetTokenInformation      = advapi32.NewProc("GetTokenInformation")
 	user32                       = syscall.NewLazyDLL("user32.dll")
 	procEnumWindows              = user32.NewProc("EnumWindows")
 	procGetWindowTextW           = user32.NewProc("GetWindowTextW")
 	procGetWindowThreadProcessId = user32.NewProc("GetWindowThreadProcessId")
 	procIsWindowVisible          = user32.NewProc("IsWindowVisible")
 	procSendMessageTimeoutW      = user32.NewProc("SendMessageTimeoutW")
+	procSetForegroundWindow      = user32.NewProc("SetForegroundWindow")
+	procGetForegroundWindow      = user32.NewProc("GetForegroundWindow")
+	procKeybd_event              = user32.NewProc("keybd_event")
+	procShowWindow               = user32.NewProc("ShowWindow")
 )
 
 const (
 	WM_NULL          = 0x0000
+	WM_KEYDOWN       = 0x0100
+	WM_KEYUP         = 0x0101
 	SMTO_ABORTIFHUNG = 0x0002
 	SMTO_BLOCK       = 0x0003
+
+	INPUT_KEYBOARD        = 1
+	KEYEVENTF_SCANCODE    = 0x0008
+	KEYEVENTF_KEYUP       = 0x0002
+	KEYEVENTF_EXTENDEDKEY = 0x0001
+
+	SC_F12     = 0x58
+	SW_RESTORE = 9
+	GW_CHILD   = 5
+
+	TOKEN_QUERY    = 0x0008
+	TokenElevation = 20
 )
+
+// Structures for SendInput
+type KEYBDINPUT struct {
+	WVk         uint16
+	WScan       uint16
+	DwFlags     uint32
+	Time        uint32
+	DwExtraInfo uintptr
+}
+
+type MOUSEINPUT struct {
+	Dx, Dy      int32
+	MouseData   uint32
+	DwFlags     uint32
+	Time        uint32
+	DwExtraInfo uintptr
+}
+
+type HARDWAREINPUT struct {
+	UMsg    uint32
+	WParamL uint16
+	WParamH uint16
+}
+
+type INPUT struct {
+	Type uint32
+	_    [4]byte  // Padding to align to 8 bytes
+	Data [32]byte // Union data (largest is MOUSEINPUT at 24 bytes, padded to 32)
+}
+
+func setForeground(hwnd uintptr) bool {
+	// Restore window if minimized, then bring to foreground
+	r1, r2, lastErr := procShowWindow.Call(hwnd, uintptr(SW_RESTORE))
+	fmt.Printf("Debug: ShowWindow(SW_RESTORE) r1=%d r2=%d err=%v\n", r1, r2, lastErr)
+
+	ret, _, err := procSetForegroundWindow.Call(hwnd)
+	if ret == 0 {
+		fmt.Printf("Debug: SetForegroundWindow failed: %v\n", err)
+		return false
+	}
+
+	fmt.Println("Debug: SetForegroundWindow succeeded")
+
+	// Give it a moment and verify
+	time.Sleep(500 * time.Millisecond)
+	fgHwnd, _, _ := procGetForegroundWindow.Call()
+	if fgHwnd == hwnd {
+		fmt.Println("Debug: Window confirmed in foreground")
+	} else {
+		fmt.Printf("Debug: WARNING - Different window in foreground (expected %d, got %d)\n", hwnd, fgHwnd)
+	}
+
+	return true
+}
+
+func sendF12ViaKeybdEvent() bool {
+	fmt.Println("Debug: Trying keybd_event approach...")
+
+	// VK_F12 = 0x7B
+	vkCode := uintptr(0x7B)
+
+	// keybd_event(vk, scan, flags, extraInfo)
+	// Key down
+	fmt.Println("Debug: Sending keybd_event KEYDOWN")
+	procKeybd_event.Call(vkCode, 0, 0x1, 0) // KEYEVENTF_EXTENDEDKEY
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Key up
+	fmt.Println("Debug: Sending keybd_event KEYUP")
+	procKeybd_event.Call(vkCode, 0, 0x1|0x2, 0) // KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP
+
+	fmt.Println("Debug: keybd_event succeeded")
+	return true
+}
 
 const (
 	TH32CS_SNAPPROCESS = 0x00000002
@@ -244,9 +398,6 @@ func findSIMPLWindow(processName string, debug bool) (uintptr, string) {
 	return 0, ""
 }
 
-// Note: direct FindWindowW-based search removed in favor of
-// enumerating windows and matching by owning process and title.
-
 func isWindowResponsive(hwnd uintptr, debug bool) bool {
 	var result uintptr
 
@@ -335,10 +486,23 @@ func waitForWindowToAppear(timeout time.Duration) (uintptr, bool) {
 	return 0, false
 }
 
-// Deprecated: we now wait for the actual main window and its responsiveness
-// rather than only the process presence.
-
 func main() {
+	// Check if running as admin
+	if !isElevated() {
+		fmt.Println("This program requires administrator privileges.")
+		fmt.Println("Relaunching as administrator...")
+
+		if err := relaunchAsAdmin(); err != nil {
+			fmt.Printf("Error relaunching as admin: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Exit this instance, the elevated one will continue
+		os.Exit(0)
+	}
+
+	fmt.Println("Running with administrator privileges ✓")
+
 	// Check if a file path argument was provided
 	if len(os.Args) < 2 {
 		fmt.Println("Usage: smpc <file-path>")
@@ -393,4 +557,28 @@ func main() {
 	time.Sleep(5 * time.Second)
 
 	fmt.Printf("Successfully opened file: %s\n", absPath)
+
+	// Confirm elevation before sending keystrokes
+	if isElevated() {
+		fmt.Println("Debug: Process is elevated, proceeding with keystroke injection")
+	} else {
+		fmt.Println("Debug: WARNING - Process is NOT elevated, keystroke injection may fail")
+	}
+
+	// Bring window to foreground and send F12 (compile)
+	_ = setForeground(hwnd)
+
+	fmt.Println("Waiting for window to receive focus...")
+	time.Sleep(1 * time.Second)
+
+	// Use keybd_event (older API that works with SIMPL Windows)
+	fmt.Println("Sending F12 keystroke to trigger compile...")
+	if sendF12ViaKeybdEvent() {
+		fmt.Println("Successfully sent F12 keystroke")
+		fmt.Println("Waiting for compile to complete...")
+		time.Sleep(3 * time.Second)
+	}
+
+	fmt.Println("\nPress Enter to exit...")
+	fmt.Scanln()
 }
