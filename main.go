@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -49,6 +50,27 @@ func isElevated() bool {
 	}
 
 	return elevation.TokenIsElevated != 0
+}
+
+// childInfo and collectChildInfos moved from collect_child_infos.go for single-file build
+type childInfo struct {
+	hwnd      uintptr
+	className string
+	text      string
+}
+
+// collectChildInfos returns a slice of childInfo for all child controls of hwnd
+func collectChildInfos(hwnd uintptr) []childInfo {
+	infos := []childInfo{}
+	var cb func(hwnd uintptr, lparam uintptr) uintptr
+	cb = func(chWnd uintptr, lparam uintptr) uintptr {
+		t := getWindowText(chWnd)
+		c := getClassName(chWnd)
+		infos = append(infos, childInfo{hwnd: chWnd, className: c, text: t})
+		return 1
+	}
+	procEnumChildWindows.Call(hwnd, syscall.NewCallback(cb), 0)
+	return infos
 }
 
 func relaunchAsAdmin() error {
@@ -472,46 +494,46 @@ func findSIMPLWindow(processName string, debug bool) (uintptr, string) {
 
 // waitForDialog looks for a visible window belonging to the SIMPL process
 // whose title contains the provided substring. It polls until timeout.
-func waitForDialog(pid uint32, titleSubstring string, timeout time.Duration, debug bool) (uintptr, string, bool) {
-	deadline := time.Now().Add(timeout)
-	normalized := strings.ToLower(titleSubstring)
+// func waitForDialog(pid uint32, titleSubstring string, timeout time.Duration, debug bool) (uintptr, string, bool) {
+// 	deadline := time.Now().Add(timeout)
+// 	normalized := strings.ToLower(titleSubstring)
 
-	for time.Now().Before(deadline) {
-		windows := enumerateWindows()
+// 	for time.Now().Before(deadline) {
+// 		windows := enumerateWindows()
 
-		// First pass: match within specified PID (if provided), prefer exact title match
-		for _, w := range windows {
-			if pid != 0 && w.pid != pid {
-				continue
-			}
-			if strings.EqualFold(w.title, titleSubstring) || windowOrChildrenContain(w.hwnd, normalized) {
-				if debug {
-					fmt.Printf("Debug: Detected dialog '%s' (matched '%s')\n", w.title, titleSubstring)
-				}
-				return w.hwnd, w.title, true
-			}
-		}
+// 		// First pass: match within specified PID (if provided), prefer exact title match
+// 		for _, w := range windows {
+// 			if pid != 0 && w.pid != pid {
+// 				continue
+// 			}
+// 			if strings.EqualFold(w.title, titleSubstring) || windowOrChildrenContain(w.hwnd, normalized) {
+// 				if debug {
+// 					fmt.Printf("Debug: Detected dialog '%s' (matched '%s')\n", w.title, titleSubstring)
+// 				}
+// 				return w.hwnd, w.title, true
+// 			}
+// 		}
 
-		// Second pass: relaxed (any process) to catch helper-process dialogs
-		if pid != 0 {
-			for _, w := range windows {
-				if strings.EqualFold(w.title, titleSubstring) || windowOrChildrenContain(w.hwnd, normalized) {
-					if debug {
-						fmt.Printf("Debug: Detected dialog (any PID) '%s' (matched '%s')\n", w.title, titleSubstring)
-					}
-					return w.hwnd, w.title, true
-				}
-			}
-		}
+// 		// Second pass: relaxed (any process) to catch helper-process dialogs
+// 		if pid != 0 {
+// 			for _, w := range windows {
+// 				if strings.EqualFold(w.title, titleSubstring) || windowOrChildrenContain(w.hwnd, normalized) {
+// 					if debug {
+// 						fmt.Printf("Debug: Detected dialog (any PID) '%s' (matched '%s')\n", w.title, titleSubstring)
+// 					}
+// 					return w.hwnd, w.title, true
+// 				}
+// 			}
+// 		}
 
-		time.Sleep(100 * time.Millisecond)
-	}
+// 		time.Sleep(100 * time.Millisecond)
+// 	}
 
-	if debug {
-		fmt.Printf("Debug: Timeout waiting for dialog containing '%s'\n", titleSubstring)
-	}
-	return 0, "", false
-}
+// 	if debug {
+// 		fmt.Printf("Debug: Timeout waiting for dialog containing '%s'\n", titleSubstring)
+// 	}
+// 	return 0, "", false
+// }
 
 // enumerateWindows performs a thread-safe enumeration of visible top-level windows
 func enumerateWindows() []windowInfo {
@@ -526,32 +548,32 @@ func enumerateWindows() []windowInfo {
 	return windows
 }
 
-var (
-	childMatchSubstr string
-	childFound       bool
-)
+// var (
+// 	childMatchSubstr string
+// 	childFound       bool
+// )
 
-func enumChildCallback(hwnd uintptr, lparam uintptr) uintptr {
-	t := strings.ToLower(getWindowText(hwnd))
-	if t != "" && strings.Contains(t, childMatchSubstr) {
-		childFound = true
-		return 0 // stop enumeration
-	}
-	return 1
-}
+// func enumChildCallback(hwnd uintptr, lparam uintptr) uintptr {
+// 	t := strings.ToLower(getWindowText(hwnd))
+// 	if t != "" && strings.Contains(t, childMatchSubstr) {
+// 		childFound = true
+// 		return 0 // stop enumeration
+// 	}
+// 	return 1
+// }
 
-func windowOrChildrenContain(hwnd uintptr, substrLower string) bool {
-	// Check window title
-	if strings.Contains(strings.ToLower(getWindowText(hwnd)), substrLower) {
-		return true
-	}
-	// Check child controls' text
-	childMatchSubstr = substrLower
-	childFound = false
-	cb := syscall.NewCallback(enumChildCallback)
-	procEnumChildWindows.Call(hwnd, cb, 0)
-	return childFound
-}
+// func windowOrChildrenContain(hwnd uintptr, substrLower string) bool {
+// 	// Check window title
+// 	if strings.Contains(strings.ToLower(getWindowText(hwnd)), substrLower) {
+// 		return true
+// 	}
+// 	// Check child controls' text
+// 	childMatchSubstr = substrLower
+// 	childFound = false
+// 	cb := syscall.NewCallback(enumChildCallback)
+// 	procEnumChildWindows.Call(hwnd, cb, 0)
+// 	return childFound
+// }
 
 // startWindowMonitor launches a background goroutine that periodically
 // enumerates windows and logs any newly seen windows/dialogs and their child texts.
@@ -898,19 +920,31 @@ func main() {
 			if ok {
 				fmt.Printf("Compile completed: %s\n", ev.Title)
 				// Parse child texts for error/warning/info counts
-				childTexts := collectChildTexts(ev.Hwnd)
+				// Enhanced debug: print class name and text for each child
+				childInfos := collectChildInfos(ev.Hwnd)
+				fmt.Println("[DEBUG] Child controls in Compile Complete dialog:")
+				for _, ci := range childInfos {
+					fmt.Printf("[DEBUG] class=%q text=%q\n", ci.className, ci.text)
+				}
+
+				// Try to parse each line of each child text
 				var warnings, notices int
-				for _, t := range childTexts {
-					if n, ok := parseStatLine(t, "Program Warnings:"); ok {
-						warnings = n
-					}
-					if n, ok := parseStatLine(t, "Program Notices:"); ok {
-						notices = n
+				var compileTime float64
+				for _, ci := range childInfos {
+					lines := strings.Split(ci.text, "\n")
+					for _, t := range lines {
+						if n, ok := parseStatLine(t, "Program Warnings:"); ok {
+							warnings = n
+						}
+						if n, ok := parseStatLine(t, "Program Notices:"); ok {
+							notices = n
+						}
+						if secs, ok := parseCompileTimeLine(t); ok {
+							compileTime = secs
+						}
 					}
 				}
-				fmt.Printf("Compile results: Warnings=%d, Notices=%d\n", warnings, notices)
-				// Optionally print all child texts for debug
-				fmt.Printf("Debug: Compile Complete dialog child texts: %v\n", childTexts)
+				fmt.Printf("Compile results: Warnings=%d, Notices=%d, Compile Time=%.2f seconds\n", warnings, notices, compileTime)
 			} else {
 				fmt.Println("Warning: Did not detect 'Compile Complete' dialog within timeout")
 			}
@@ -923,13 +957,42 @@ func main() {
 
 // parseStatLine parses a line like "Program Warnings: 1" and returns (1, true) if matched, else (0, false)
 func parseStatLine(line, prefix string) (int, bool) {
-	line = strings.TrimSpace(line)
-	if strings.HasPrefix(line, prefix) {
-		rest := strings.TrimSpace(line[len(prefix):])
+	pattern := "^" + regexp.QuoteMeta(prefix) + `\s*:\s*(\d+)`
+	fmt.Printf("[DEBUG] parseStatLine: line=%q, prefix=%q, pattern=%q\n", line, prefix, pattern)
+	re := regexp.MustCompile(pattern)
+	matches := re.FindStringSubmatch(line)
+	if len(matches) == 2 {
+		fmt.Printf("[DEBUG] parseStatLine: match found, value=%q\n", matches[1])
 		var n int
-		if _, err := fmt.Sscanf(rest, "%d", &n); err == nil {
+		if _, err := fmt.Sscanf(matches[1], "%d", &n); err == nil {
+			fmt.Printf("[DEBUG] parseStatLine: parsed int=%d\n", n)
 			return n, true
+		} else {
+			fmt.Printf("[DEBUG] parseStatLine: failed to parse int: %v\n", err)
 		}
+	} else {
+		fmt.Printf("[DEBUG] parseStatLine: no match\n")
+	}
+	return 0, false
+}
+
+// parseCompileTimeLine parses a line like "Compile Time: 0.23 seconds" and returns (0.23, true) if matched, else (0, false)
+func parseCompileTimeLine(line string) (float64, bool) {
+	pattern := `^Compile Time\s*:\s*([0-9.]+)\s*(s|seconds)?`
+	fmt.Printf("[DEBUG] parseCompileTimeLine: line=%q, pattern=%q\n", line, pattern)
+	re := regexp.MustCompile(pattern)
+	matches := re.FindStringSubmatch(line)
+	if len(matches) >= 2 {
+		fmt.Printf("[DEBUG] parseCompileTimeLine: match found, value=%q\n", matches[1])
+		var secs float64
+		if _, err := fmt.Sscanf(matches[1], "%f", &secs); err == nil {
+			fmt.Printf("[DEBUG] parseCompileTimeLine: parsed float=%f\n", secs)
+			return secs, true
+		} else {
+			fmt.Printf("[DEBUG] parseCompileTimeLine: failed to parse float: %v\n", err)
+		}
+	} else {
+		fmt.Printf("[DEBUG] parseCompileTimeLine: no match\n")
 	}
 	return 0, false
 }
