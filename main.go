@@ -57,6 +57,7 @@ type childInfo struct {
 	hwnd      uintptr
 	className string
 	text      string
+	items     []string // For ListBox controls, stores items directly
 }
 
 // collectChildInfos returns a slice of childInfo for all child controls of hwnd
@@ -73,15 +74,16 @@ func collectChildInfos(hwnd uintptr) []childInfo {
 		case "Edit":
 			t = getEditText(chWnd)
 		case "ListBox":
-			// For ListBox, get all items and join them with newlines
+			// For ListBox, get all items and store them directly
 			items := getListBoxItems(chWnd)
-			t = strings.Join(items, "\n")
+			t = strings.Join(items, "\n") // Still join for text field for backward compatibility
+			infos = append(infos, childInfo{hwnd: chWnd, className: c, text: t, items: items})
+			return 1
 		default:
 			t = getWindowText(chWnd)
 		}
 
 		infos = append(infos, childInfo{hwnd: chWnd, className: c, text: t})
-
 		return 1
 	}
 
@@ -1012,10 +1014,9 @@ func main() {
 
 				// Extract messages from ListBox
 				for _, ci := range childInfos {
-					if ci.className == "ListBox" && ci.text != "" {
-						text := strings.ReplaceAll(ci.text, "\r\n", "\n")
-						lines := strings.SplitSeq(text, "\n")
-						for line := range lines {
+					if ci.className == "ListBox" && len(ci.items) > 0 {
+						// Use items directly instead of splitting text
+						for _, line := range ci.items {
 							line = strings.TrimSpace(line)
 							if line == "" {
 								continue
