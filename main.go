@@ -498,49 +498,6 @@ func findSIMPLWindow(processName string, debug bool) (uintptr, string) {
 	return 0, ""
 }
 
-// waitForDialog looks for a visible window belonging to the SIMPL process
-// whose title contains the provided substring. It polls until timeout.
-// func waitForDialog(pid uint32, titleSubstring string, timeout time.Duration, debug bool) (uintptr, string, bool) {
-// 	deadline := time.Now().Add(timeout)
-// 	normalized := strings.ToLower(titleSubstring)
-
-// 	for time.Now().Before(deadline) {
-// 		windows := enumerateWindows()
-
-// 		// First pass: match within specified PID (if provided), prefer exact title match
-// 		for _, w := range windows {
-// 			if pid != 0 && w.pid != pid {
-// 				continue
-// 			}
-// 			if strings.EqualFold(w.title, titleSubstring) || windowOrChildrenContain(w.hwnd, normalized) {
-// 				if debug {
-// 					fmt.Printf("Debug: Detected dialog '%s' (matched '%s')\n", w.title, titleSubstring)
-// 				}
-// 				return w.hwnd, w.title, true
-// 			}
-// 		}
-
-// 		// Second pass: relaxed (any process) to catch helper-process dialogs
-// 		if pid != 0 {
-// 			for _, w := range windows {
-// 				if strings.EqualFold(w.title, titleSubstring) || windowOrChildrenContain(w.hwnd, normalized) {
-// 					if debug {
-// 						fmt.Printf("Debug: Detected dialog (any PID) '%s' (matched '%s')\n", w.title, titleSubstring)
-// 					}
-// 					return w.hwnd, w.title, true
-// 				}
-// 			}
-// 		}
-
-// 		time.Sleep(100 * time.Millisecond)
-// 	}
-
-// 	if debug {
-// 		fmt.Printf("Debug: Timeout waiting for dialog containing '%s'\n", titleSubstring)
-// 	}
-// 	return 0, "", false
-// }
-
 // enumerateWindows performs a thread-safe enumeration of visible top-level windows
 func enumerateWindows() []windowInfo {
 	windowsMu.Lock()
@@ -556,33 +513,6 @@ func enumerateWindows() []windowInfo {
 
 	return windows
 }
-
-// var (
-// 	childMatchSubstr string
-// 	childFound       bool
-// )
-
-// func enumChildCallback(hwnd uintptr, lparam uintptr) uintptr {
-// 	t := strings.ToLower(getWindowText(hwnd))
-// 	if t != "" && strings.Contains(t, childMatchSubstr) {
-// 		childFound = true
-// 		return 0 // stop enumeration
-// 	}
-// 	return 1
-// }
-
-// func windowOrChildrenContain(hwnd uintptr, substrLower string) bool {
-// 	// Check window title
-// 	if strings.Contains(strings.ToLower(getWindowText(hwnd)), substrLower) {
-// 		return true
-// 	}
-// 	// Check child controls' text
-// 	childMatchSubstr = substrLower
-// 	childFound = false
-// 	cb := syscall.NewCallback(enumChildCallback)
-// 	procEnumChildWindows.Call(hwnd, cb, 0)
-// 	return childFound
-// }
 
 // startWindowMonitor launches a background goroutine that periodically
 // enumerates windows and logs any newly seen windows/dialogs and their child texts.
