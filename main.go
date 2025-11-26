@@ -913,6 +913,34 @@ func main() {
 			fmt.Println("Warning: Could not determine SIMPL Windows process PID; dialog detection may be limited")
 		}
 
+		// Detect "Incomplete Symbols" error dialog - this is a fatal error
+		if pid != 0 && monitorCh != nil {
+			fmt.Println("Checking for 'Incomplete Symbols' error dialog...")
+			ev, ok := waitOnMonitor(2*time.Second,
+				func(e WindowEvent) bool { return strings.EqualFold(e.Title, "Incomplete Symbols") },
+				func(e WindowEvent) bool { return strings.Contains(strings.ToLower(e.Title), "incomplete") },
+			)
+
+			if ok {
+				fmt.Printf("\n*** ERROR: %s ***\n", ev.Title)
+				fmt.Println("The program contains incomplete symbols and cannot be compiled.")
+				fmt.Println("Please fix the incomplete symbols in SIMPL Windows before attempting to compile.")
+
+				// Extract error details from the dialog
+				childInfos := collectChildInfos(ev.Hwnd)
+				for _, ci := range childInfos {
+					if ci.className == "Edit" && len(ci.text) > 50 {
+						fmt.Printf("\nDetails:\n%s\n", ci.text)
+						break
+					}
+				}
+
+				fmt.Println("\nPress Enter to exit...")
+				fmt.Scanln()
+				os.Exit(1)
+			}
+		}
+
 		// Detect save prompt ("Convert/Compile") via monitor channel and auto-confirm "Yes"
 		if pid != 0 && monitorCh != nil {
 			fmt.Println("Watching for 'Convert/Compile' save prompt...")
