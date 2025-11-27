@@ -7,6 +7,13 @@ A tool to automate compiling [Crestron][crestron] [SIMPL Windows][smpwin] progra
 
 ## Installation
 
+### Using Scoop
+
+```bash
+scoop bucket add norgateav-crestron https://github.com/Norgate-AV/scoop-norgateav-crestron.git
+scoop install smpc
+```
+
 ### Using Go Install
 
 ```bash
@@ -79,7 +86,7 @@ For automated builds in CI/CD pipelines (GitHub Actions, Jenkins, etc.), UAC pro
 
 To disable UAC temporarily for testing:
 
-```powershell
+```pwsh
 # Disable UAC (requires restart)
 Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name "EnableLUA" -Value 0
 
