@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,16 +15,35 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var verbose bool
+
 var RootCmd = &cobra.Command{
 	Use:     "smpc <file-path>",
 	Short:   "smpc - Automate compilation of .smw files",
 	Version: version.GetVersion(),
+	Args:    validateSmwFile,
 	RunE:    Execute,
 }
 
 func init() {
 	// Set custom version template to show full version info
 	RootCmd.SetVersionTemplate(`{{printf "%s\n" .Version}}`)
+
+	// Add flags
+	RootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "V", false, "enable verbose output")
+}
+
+// validateSmwFile validates that exactly one argument is provided and it has .smw extension
+func validateSmwFile(cmd *cobra.Command, args []string) error {
+	if err := cobra.ExactArgs(1)(cmd, args); err != nil {
+		return err
+	}
+
+	if filepath.Ext(args[0]) != ".smw" {
+		return fmt.Errorf("file must have .smw extension")
+	}
+
+	return nil
 }
 
 func Execute(cmd *cobra.Command, args []string) error {
@@ -42,42 +62,8 @@ func Execute(cmd *cobra.Command, args []string) error {
 
 	fmt.Println("Running with administrator privileges ✓")
 
-	// Start background window monitor focused on SIMPL Windows process (if available)
-	// It will help us observe dialogs and window changes in real time.
-	go func() {
-		// Try to obtain PID repeatedly until found, then monitor that PID
-		var pid uint32
-
-		for i := 0; i < 50 && pid == 0; i++ { // up to ~5s
-			pid = simpl.GetPid()
-			if pid == 0 {
-				time.Sleep(100 * time.Millisecond)
-			}
-		}
-
-		// Init channel
-		windows.MonitorCh = make(chan windows.WindowEvent, 64)
-		if pid == 0 {
-			fmt.Println("[DEBUG] Window monitor falling back to all processes (SIMPL PID not found yet)")
-			windows.StartWindowMonitor(0, 500*time.Millisecond)
-		} else {
-			fmt.Printf("[DEBUG] Window monitor targeting SIMPL PID %d\n", pid)
-			windows.StartWindowMonitor(pid, 500*time.Millisecond)
-		}
-	}()
-
-	// Check if a file path argument was provided
-	if len(os.Args) < 2 {
-		return fmt.Errorf("usage: smpc <file-path>")
-	}
-
-	// Get the file path from the first command line argument
-	filePath := os.Args[1]
-
-	// Check if the file has .smw extension
-	if filepath.Ext(filePath) != ".smw" {
-		return fmt.Errorf("file must have .smw extension")
-	}
+	// Get the file path from the command arguments
+	filePath := args[0]
 
 	// Check if the file exists
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
@@ -90,11 +76,20 @@ func Execute(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("error resolving file path: %w", err)
 	}
 
+	// Start background window monitor to observe dialogs and window changes in real time
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel() // Ensure the goroutine is cleaned up
+	go simpl.StartMonitoring(ctx)
+
 	// Open the file with SIMPL Windows application using elevated privileges
 	// SW_SHOWNORMAL = 1
 	if err := windows.ShellExecute(0, "runas", simpl.SIMPL_WINDOWS_PATH, absPath, "", 1); err != nil {
 		return fmt.Errorf("error opening file: %w", err)
 	}
+
+	// At this point, the SIMPL Windows process should have started
+	// Meaning, if we fail from any point onward, we need to make sure we
+	// clean up by closing SIMPL Windows
 
 	// Wait for the main window to appear (with a 1 minute timeout)
 	fmt.Printf("Waiting for SIMPL Windows to fully launch...\n")
@@ -102,6 +97,9 @@ func Execute(cmd *cobra.Command, args []string) error {
 	if !found {
 		return fmt.Errorf("timed out waiting for SIMPL Windows window to appear")
 	}
+
+	// Set up deferred cleanup to ensure SIMPL Windows is closed on exit
+	defer simpl.Cleanup(hwnd)
 
 	// Wait for the window to be fully ready and responsive (with a 30 second timeout)
 	if !simpl.WaitForReady(hwnd, 30*time.Second) {
@@ -354,18 +352,6 @@ func Execute(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// Print final summary
-		if pid != 0 && windows.MonitorCh != nil {
-			fmt.Printf("\n=== Compile Summary ===\n")
-			if errors > 0 {
-				fmt.Printf("Errors: %d\n", errors)
-			}
-			fmt.Printf("Warnings: %d\n", warnings)
-			fmt.Printf("Notices: %d\n", notices)
-			fmt.Printf("Compile Time: %.2f seconds\n", compileTime)
-			fmt.Println("=======================")
-		}
-
 		// Close SIMPL Windows after successful compilation
 		fmt.Println("\nClosing dialogs and SIMPL Windows...")
 
@@ -396,13 +382,23 @@ func Execute(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// Now close the main SIMPL Windows application
+		// Now close the main SIMPL Windows application (defer will also do this, but we do it here for clean output)
 		if hwnd != 0 {
 			windows.CloseWindow(hwnd, "SIMPL Windows")
 			time.Sleep(1 * time.Second)
 			fmt.Println("SIMPL Windows closed successfully")
-		} else {
-			fmt.Println("Warning: Could not close SIMPL Windows (main window handle not found)")
+		}
+
+		// Print final summary
+		if pid != 0 && windows.MonitorCh != nil {
+			fmt.Printf("\n=== Compile Summary ===\n")
+			if errors > 0 {
+				fmt.Printf("Errors: %d\n", errors)
+			}
+			fmt.Printf("Warnings: %d\n", warnings)
+			fmt.Printf("Notices: %d\n", notices)
+			fmt.Printf("Compile Time: %.2f seconds\n", compileTime)
+			fmt.Println("=======================")
 		}
 
 		fmt.Println("Press Enter to exit...")

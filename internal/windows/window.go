@@ -107,3 +107,28 @@ func GetWindowProcessId(hwnd uintptr) uint32 {
 	procGetWindowThreadProcessId.Call(hwnd, uintptr(unsafe.Pointer(&pid)))
 	return pid
 }
+
+// TerminateProcess forcefully terminates a process by its PID
+func TerminateProcess(pid uint32) error {
+	const PROCESS_TERMINATE = 0x0001
+
+	// Open the process with terminate rights
+	hProcess, _, err := procOpenProcess.Call(
+		uintptr(PROCESS_TERMINATE),
+		uintptr(0),
+		uintptr(pid),
+	)
+
+	if hProcess == 0 {
+		return fmt.Errorf("failed to open process: %v", err)
+	}
+	defer ProcCloseHandle.Call(hProcess)
+
+	// Terminate the process
+	ret, _, err := procTerminateProcess.Call(hProcess, uintptr(1))
+	if ret == 0 {
+		return fmt.Errorf("failed to terminate process: %v", err)
+	}
+
+	return nil
+}

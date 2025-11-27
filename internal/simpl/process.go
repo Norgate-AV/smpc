@@ -236,3 +236,27 @@ func WaitForAppear(timeout time.Duration) (uintptr, bool) {
 
 	return 0, false
 }
+
+// Cleanup ensures SIMPL Windows is properly closed, with fallback to force termination
+func Cleanup(hwnd uintptr) {
+	fmt.Println("\nCleaning up...")
+	if hwnd == 0 {
+		return
+	}
+
+	// Try to close gracefully
+	windows.CloseWindow(hwnd, "SIMPL Windows")
+	time.Sleep(1 * time.Second)
+
+	// Verify the window is actually closed
+	testHwnd, _ := FindWindow("SIMPL Windows", false)
+	if testHwnd != 0 {
+		fmt.Println("[DEBUG] WARNING: SIMPL Windows did not close properly")
+		// If we have the PID, attempt to terminate the process
+		pid := GetPid()
+		if pid != 0 {
+			fmt.Printf("[DEBUG] Attempting to force terminate process (PID: %d)...\n", pid)
+			windows.TerminateProcess(pid)
+		}
+	}
+}

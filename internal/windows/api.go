@@ -20,6 +20,8 @@ var (
 	ProcCloseHandle              = kernel32.NewProc("CloseHandle")
 	procGetCurrentProcess        = kernel32.NewProc("GetCurrentProcess")
 	procOpenProcessToken         = kernel32.NewProc("OpenProcessToken")
+	procOpenProcess              = kernel32.NewProc("OpenProcess")
+	procTerminateProcess         = kernel32.NewProc("TerminateProcess")
 	advapi32                     = syscall.NewLazyDLL("advapi32.dll")
 	procGetTokenInformation      = advapi32.NewProc("GetTokenInformation")
 	user32                       = syscall.NewLazyDLL("user32.dll")
