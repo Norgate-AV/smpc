@@ -9,14 +9,21 @@ import (
 
 	"github.com/Norgate-AV/smpc/internal/compiler"
 	"github.com/Norgate-AV/smpc/internal/simpl"
+	"github.com/Norgate-AV/smpc/internal/version"
 	"github.com/Norgate-AV/smpc/internal/windows"
 	"github.com/spf13/cobra"
 )
 
 var RootCmd = &cobra.Command{
-	Use:   "smpc <file-path>",
-	Short: "smpc - Automate compilation of .smw files",
-	RunE:  Execute,
+	Use:     "smpc <file-path>",
+	Short:   "smpc - Automate compilation of .smw files",
+	Version: version.GetVersion(),
+	RunE:    Execute,
+}
+
+func init() {
+	// Set custom version template to show full version info
+	RootCmd.SetVersionTemplate(`{{printf "%s\n" .Version}}`)
 }
 
 func Execute(cmd *cobra.Command, args []string) error {
