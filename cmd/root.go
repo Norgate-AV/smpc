@@ -10,9 +10,16 @@ import (
 	"github.com/Norgate-AV/smpc/internal/compiler"
 	"github.com/Norgate-AV/smpc/internal/simpl"
 	"github.com/Norgate-AV/smpc/internal/windows"
+	"github.com/spf13/cobra"
 )
 
-func Execute() error {
+var RootCmd = &cobra.Command{
+	Use:   "smpc <file-path>",
+	Short: "smpc - Automate compilation of .smw files",
+	RunE:  Execute,
+}
+
+func Execute(cmd *cobra.Command, args []string) error {
 	// Check if running as admin
 	if !windows.IsElevated() {
 		fmt.Println("This program requires administrator privileges.")
