@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/Norgate-AV/smpc/internal/compiler"
@@ -19,6 +21,9 @@ import (
 var (
 	verbose      bool
 	recompileAll bool
+	// Track SIMPL Windows for cleanup on interrupt
+	simplHwnd uintptr
+	simplPid  uint32
 )
 
 var RootCmd = &cobra.Command{
@@ -110,6 +115,84 @@ func Execute(cmd *cobra.Command, args []string) error {
 	// Meaning, if we fail from any point onward, we need to make sure we
 	// clean up by closing SIMPL Windows
 
+	// Try to get the PID early so signal handlers can use it for cleanup
+	// Give it a moment for the process to actually start
+	time.Sleep(500 * time.Millisecond)
+	earlyPid := simpl.GetPid()
+	if earlyPid != 0 {
+		simplPid = earlyPid
+		log.Printf("Early PID detection: %d", earlyPid)
+	}
+
+	// Set up Windows console control handler to catch window close events
+	// This is more reliable than signal handling on Windows
+	windows.SetConsoleCtrlHandler(func(ctrlType uint32) uintptr {
+		log.Printf("\n\nReceived console control event: %s (%d)", windows.GetCtrlTypeName(ctrlType), ctrlType)
+		fmt.Printf("\n\nReceived console control event: %s, cleaning up...\n", windows.GetCtrlTypeName(ctrlType))
+
+		// Try to cleanup using hwnd if we have it
+		if simplHwnd != 0 {
+			log.Printf("Cleaning up SIMPL Windows (hwnd: %d)", simplHwnd)
+			simpl.Cleanup(simplHwnd)
+		} else if simplPid != 0 {
+			// If we don't have hwnd yet but have PID, force terminate
+			log.Printf("Force terminating SIMPL Windows (PID: %d)", simplPid)
+			windows.TerminateProcess(simplPid)
+		} else {
+			// Last resort - try to find and kill any smpwin.exe process we may have started
+			log.Println("Attempting to find and terminate SIMPL Windows process...")
+			pid := simpl.GetPid()
+			if pid != 0 {
+				log.Printf("Found SIMPL Windows PID: %d, terminating...", pid)
+				windows.TerminateProcess(pid)
+			} else {
+				log.Println("Could not find SIMPL Windows process to terminate")
+			}
+		}
+
+		log.Println("Cleanup completed, exiting")
+
+		// Must call os.Exit to actually terminate the process
+		// Otherwise the handler returns and execution continues
+		os.Exit(130)
+
+		// Return TRUE to indicate we handled the event
+		// (this won't actually be reached due to os.Exit, but required for the function signature)
+		return 1
+	})
+
+	// Set up signal handler immediately to catch Ctrl+C during window wait
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		sig := <-sigChan
+		log.Printf("\n\nReceived signal: %v", sig)
+		fmt.Printf("\n\nReceived interrupt signal, cleaning up...\n")
+		log.Println("Running cleanup due to interrupt...")
+
+		// Try to cleanup using hwnd if we have it
+		if simplHwnd != 0 {
+			log.Printf("Cleaning up SIMPL Windows (hwnd: %d)", simplHwnd)
+			simpl.Cleanup(simplHwnd)
+		} else if simplPid != 0 {
+			// If we don't have hwnd yet but have PID, force terminate
+			log.Printf("Force terminating SIMPL Windows (PID: %d)", simplPid)
+			windows.TerminateProcess(simplPid)
+		} else {
+			// Last resort - try to find and kill any smpwin.exe process we may have started
+			log.Println("Attempting to find and terminate SIMPL Windows process...")
+			pid := simpl.GetPid()
+			if pid != 0 {
+				log.Printf("Found SIMPL Windows PID: %d, terminating...", pid)
+				windows.TerminateProcess(pid)
+			}
+		}
+
+		log.Println("Cleanup completed, exiting")
+		os.Exit(130) // Standard exit code for Ctrl+C
+	}()
+	log.Println("Signal handler registered (early)")
+
 	// Wait for the main window to appear (with a 1 minute timeout)
 	fmt.Printf("Waiting for SIMPL Windows to fully launch...\n")
 	log.Println("Waiting for SIMPL Windows window to appear...")
@@ -119,6 +202,10 @@ func Execute(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("timed out waiting for SIMPL Windows window to appear")
 	}
 	log.Printf("Window appeared with hwnd: %d", hwnd)
+
+	// Store hwnd for signal handler cleanup
+	simplHwnd = hwnd
+	log.Printf("Stored hwnd for signal handler: %d", simplHwnd)
 
 	// Set up deferred cleanup to ensure SIMPL Windows is closed on exit
 	defer simpl.Cleanup(hwnd)
@@ -146,6 +233,7 @@ func Execute(cmd *cobra.Command, args []string) error {
 		fmt.Println("Warning: Could not determine SIMPL Windows process PID; dialog detection may be limited")
 	} else {
 		log.Printf("SIMPL Windows PID: %d", pid)
+		simplPid = pid // Store for signal handler
 	}
 
 	// Check for "Operation Complete" dialog that may appear after loading the file
