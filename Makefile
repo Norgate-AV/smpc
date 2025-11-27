@@ -16,3 +16,6 @@ clean:
 install: build
 	go install ./...
 
+.PHONY: test
+test:
+	go test ./... -v
