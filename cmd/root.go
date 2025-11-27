@@ -12,19 +12,18 @@ import (
 	"github.com/Norgate-AV/smpc/internal/windows"
 )
 
-func Execute() {
+func Execute() error {
 	// Check if running as admin
 	if !windows.IsElevated() {
 		fmt.Println("This program requires administrator privileges.")
 		fmt.Println("Relaunching as administrator...")
 
 		if err := windows.RelaunchAsAdmin(); err != nil {
-			fmt.Printf("Error relaunching as admin: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("error relaunching as admin: %w", err)
 		}
 
 		// Exit this instance, the elevated one will continue
-		os.Exit(0)
+		return nil
 	}
 
 	fmt.Println("Running with administrator privileges ✓")
@@ -55,8 +54,7 @@ func Execute() {
 
 	// Check if a file path argument was provided
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: smpc <file-path>")
-		os.Exit(1)
+		return fmt.Errorf("usage: smpc <file-path>")
 	}
 
 	// Get the file path from the first command line argument
@@ -64,42 +62,36 @@ func Execute() {
 
 	// Check if the file has .smw extension
 	if filepath.Ext(filePath) != ".smw" {
-		fmt.Printf("Error: File must have .smw extension\n")
-		os.Exit(1)
+		return fmt.Errorf("file must have .smw extension")
 	}
 
 	// Check if the file exists
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		fmt.Printf("Error: File does not exist: %s\n", filePath)
-		os.Exit(1)
+		return fmt.Errorf("file does not exist: %s", filePath)
 	}
 
 	// Convert to absolute path
 	absPath, err := filepath.Abs(filePath)
 	if err != nil {
-		fmt.Printf("Error resolving file path: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("error resolving file path: %w", err)
 	}
 
 	// Open the file with SIMPL Windows application using elevated privileges
 	// SW_SHOWNORMAL = 1
 	if err := windows.ShellExecute(0, "runas", simpl.SIMPL_WINDOWS_PATH, absPath, "", 1); err != nil {
-		fmt.Printf("Error opening file: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("error opening file: %w", err)
 	}
 
 	// Wait for the main window to appear (with a 1 minute timeout)
 	fmt.Printf("Waiting for SIMPL Windows to fully launch...\n")
 	hwnd, found := simpl.WaitForAppear(60 * time.Second)
 	if !found {
-		fmt.Printf("Warning: Timed out waiting for SIMPL Windows window to appear\n")
-		os.Exit(1)
+		return fmt.Errorf("timed out waiting for SIMPL Windows window to appear")
 	}
 
 	// Wait for the window to be fully ready and responsive (with a 30 second timeout)
 	if !simpl.WaitForReady(hwnd, 30*time.Second) {
-		fmt.Printf("Warning: Window appeared but is not responding properly\n")
-		os.Exit(1)
+		return fmt.Errorf("window appeared but is not responding properly")
 	}
 
 	// Small extra delay to allow UI to finish settling
@@ -154,9 +146,7 @@ func Execute() {
 					}
 				}
 
-				fmt.Println("\nPress Enter to exit...")
-				fmt.Scanln()
-				os.Exit(1)
+				return fmt.Errorf("program contains incomplete symbols and cannot be compiled")
 			}
 		}
 
@@ -269,11 +259,7 @@ func Execute() {
 					}
 				}
 			} else {
-				fmt.Println("Warning: Did not detect 'Compile Complete' dialog within timeout")
-				fmt.Println("Compilation may have failed or is taking longer than expected.")
-				fmt.Println("\nPress Enter to exit...")
-				fmt.Scanln()
-				return
+				return fmt.Errorf("compilation timeout: did not detect 'Compile Complete' dialog within 5 minutes")
 			}
 		}
 
@@ -410,7 +396,9 @@ func Execute() {
 
 		// Exit with error code if compilation failed
 		if hasErrors {
-			os.Exit(1)
+			return fmt.Errorf("compilation failed with %d error(s)", errors)
 		}
 	}
+
+	return nil
 }
