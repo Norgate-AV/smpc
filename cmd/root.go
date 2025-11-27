@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,7 +16,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var verbose bool
+var (
+	verbose      bool
+	recompileAll bool
+)
 
 var RootCmd = &cobra.Command{
 	Use:     "smpc <file-path>",
@@ -31,6 +35,7 @@ func init() {
 
 	// Add flags
 	RootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "V", false, "enable verbose output")
+	RootCmd.PersistentFlags().BoolVarP(&recompileAll, "recompile-all", "r", false, "trigger Recompile All (Alt+F12) instead of Compile (F12)")
 }
 
 // validateSmwFile validates that exactly one argument is provided and it has .smw extension
@@ -47,23 +52,32 @@ func validateSmwFile(cmd *cobra.Command, args []string) error {
 }
 
 func Execute(cmd *cobra.Command, args []string) error {
+	log.Printf("Execute() called with args: %v", args)
+	log.Printf("Flags: verbose=%v, recompileAll=%v", verbose, recompileAll)
+
 	// Check if running as admin
+	log.Println("Checking elevation status...")
 	if !windows.IsElevated() {
 		fmt.Println("This program requires administrator privileges.")
 		fmt.Println("Relaunching as administrator...")
+		log.Println("Not elevated, relaunching as admin...")
 
 		if err := windows.RelaunchAsAdmin(); err != nil {
+			log.Printf("RelaunchAsAdmin failed: %v", err)
 			return fmt.Errorf("error relaunching as admin: %w", err)
 		}
 
 		// Exit this instance, the elevated one will continue
+		log.Println("Relaunched successfully, exiting non-elevated instance")
 		return nil
 	}
 
 	fmt.Println("Running with administrator privileges ✓")
+	log.Println("Running with administrator privileges")
 
 	// Get the file path from the command arguments
 	filePath := args[0]
+	log.Printf("Processing file: %s", filePath)
 
 	// Check if the file exists
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
@@ -77,15 +91,20 @@ func Execute(cmd *cobra.Command, args []string) error {
 	}
 
 	// Start background window monitor to observe dialogs and window changes in real time
+	log.Println("Creating context and starting monitor goroutine...")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel() // Ensure the goroutine is cleaned up
 	go simpl.StartMonitoring(ctx)
+	log.Println("Monitor goroutine started")
 
 	// Open the file with SIMPL Windows application using elevated privileges
 	// SW_SHOWNORMAL = 1
+	log.Printf("Launching SIMPL Windows with file: %s", absPath)
 	if err := windows.ShellExecute(0, "runas", simpl.SIMPL_WINDOWS_PATH, absPath, "", 1); err != nil {
+		log.Printf("ShellExecute failed: %v", err)
 		return fmt.Errorf("error opening file: %w", err)
 	}
+	log.Println("SIMPL Windows launched successfully")
 
 	// At this point, the SIMPL Windows process should have started
 	// Meaning, if we fail from any point onward, we need to make sure we
@@ -93,24 +112,65 @@ func Execute(cmd *cobra.Command, args []string) error {
 
 	// Wait for the main window to appear (with a 1 minute timeout)
 	fmt.Printf("Waiting for SIMPL Windows to fully launch...\n")
+	log.Println("Waiting for SIMPL Windows window to appear...")
 	hwnd, found := simpl.WaitForAppear(60 * time.Second)
 	if !found {
+		log.Println("Timeout waiting for window to appear")
 		return fmt.Errorf("timed out waiting for SIMPL Windows window to appear")
 	}
+	log.Printf("Window appeared with hwnd: %d", hwnd)
 
 	// Set up deferred cleanup to ensure SIMPL Windows is closed on exit
 	defer simpl.Cleanup(hwnd)
+	log.Println("Cleanup deferred")
 
 	// Wait for the window to be fully ready and responsive (with a 30 second timeout)
+	log.Println("Waiting for window to be ready...")
 	if !simpl.WaitForReady(hwnd, 30*time.Second) {
+		log.Println("Window not responding properly")
 		return fmt.Errorf("window appeared but is not responding properly")
 	}
+	log.Println("Window is ready")
 
 	// Small extra delay to allow UI to finish settling
 	fmt.Println("Waiting a few extra seconds for UI to settle...")
 	time.Sleep(5 * time.Second)
 
 	fmt.Printf("Successfully opened file: %s\n", absPath)
+
+	// Detect SIMPL Windows process PID for dialog monitoring
+	log.Println("Getting SIMPL Windows process PID...")
+	pid := simpl.GetPid()
+	if pid == 0 {
+		log.Println("Warning: Could not determine PID")
+		fmt.Println("Warning: Could not determine SIMPL Windows process PID; dialog detection may be limited")
+	} else {
+		log.Printf("SIMPL Windows PID: %d", pid)
+	}
+
+	// Check for "Operation Complete" dialog that may appear after loading the file
+	// This dialog must be dismissed before we can send compile keystrokes
+	if pid != 0 && windows.MonitorCh != nil {
+		fmt.Println("Checking for 'Operation Complete' dialog...")
+		log.Println("Checking for Operation Complete dialog...")
+		ev, ok := windows.WaitOnMonitor(3*time.Second,
+			func(e windows.WindowEvent) bool { return strings.EqualFold(e.Title, "Operation Complete") },
+			func(e windows.WindowEvent) bool {
+				return strings.Contains(strings.ToLower(e.Title), "operation complete")
+			},
+		)
+
+		if ok {
+			log.Printf("Operation Complete dialog detected: %s", ev.Title)
+			fmt.Printf("Detected dialog: %s\n", ev.Title)
+			fmt.Println("Dismissing 'Operation Complete' dialog...")
+			windows.CloseWindow(ev.Hwnd, ev.Title)
+			time.Sleep(500 * time.Millisecond)
+			log.Println("Dialog dismissed")
+		} else {
+			log.Println("No Operation Complete dialog detected")
+		}
+	}
 
 	// Confirm elevation before sending keystrokes
 	if windows.IsElevated() {
@@ -120,22 +180,39 @@ func Execute(cmd *cobra.Command, args []string) error {
 	}
 
 	// Bring window to foreground and send F12 (compile)
+	log.Println("Bringing window to foreground...")
 	_ = windows.SetForeground(hwnd)
 
 	fmt.Println("Waiting for window to receive focus...")
 	time.Sleep(1 * time.Second)
 
 	// Use keybd_event (older API that works with SIMPL Windows)
-	fmt.Println("Sending F12 keystroke to trigger compile...")
-	if windows.SendF12() {
-		fmt.Println("Successfully sent F12 keystroke")
-
-		// Detect SIMPL Windows process PID
-		pid := simpl.GetPid()
-		if pid == 0 {
-			fmt.Println("Warning: Could not determine SIMPL Windows process PID; dialog detection may be limited")
+	log.Println("Preparing to send keystroke...")
+	var keystrokeSent bool
+	if recompileAll {
+		fmt.Println("Sending Alt+F12 keystroke to trigger Recompile All...")
+		log.Println("Sending Alt+F12 keystroke...")
+		keystrokeSent = windows.SendAltF12()
+		if keystrokeSent {
+			fmt.Println("Successfully sent Alt+F12 keystroke")
+			log.Println("Alt+F12 sent successfully")
+		} else {
+			log.Println("Failed to send Alt+F12")
 		}
+	} else {
+		fmt.Println("Sending F12 keystroke to trigger compile...")
+		log.Println("Sending F12 keystroke...")
+		keystrokeSent = windows.SendF12()
+		if keystrokeSent {
+			fmt.Println("Successfully sent F12 keystroke")
+			log.Println("F12 sent successfully")
+		} else {
+			log.Println("Failed to send F12")
+		}
+	}
 
+	if keystrokeSent {
+		log.Println("Starting compile monitoring...")
 		// Detect "Incomplete Symbols" error dialog - this is a fatal error
 		if pid != 0 && windows.MonitorCh != nil {
 			fmt.Println("Checking for 'Incomplete Symbols' error dialog...")
@@ -406,9 +483,13 @@ func Execute(cmd *cobra.Command, args []string) error {
 
 		// Exit with error code if compilation failed
 		if hasErrors {
+			log.Printf("Compilation failed with %d errors", errors)
 			return fmt.Errorf("compilation failed with %d error(s)", errors)
 		}
+
+		log.Println("Compilation completed successfully")
 	}
 
+	log.Println("Execute() completed successfully")
 	return nil
 }
