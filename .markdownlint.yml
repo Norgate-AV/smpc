@@ -1,0 +1,39 @@
+# Markdownlint configuration
+# https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md
+
+extends: null
+default: true
+
+# Rule overrides
+MD013: # Line length
+  line_length: 100
+  headings: false
+  tables: false
+  code_blocks: false
+
+MD024: # Multiple headings with the same content
+  siblings_only: true
+
+MD033: # Allow inline HTML
+  allowed_elements:
+    - "br"
+    - "sub"
+    - "sup"
+    - "kbd"
+    - "details"
+    - "summary"
+    - "img"
+
+MD041: false # First line in file should be a top level heading
+
+MD046: # Code block style
+  style: fenced
+
+MD036: false # Emphasis used instead of a heading
+
+MD025: false # Multiple top level headings in the same document
+
+MD034: false # Bare URL used
+
+MD026: # Trailing punctuation in heading
+  punctuation: ".,;:!"
