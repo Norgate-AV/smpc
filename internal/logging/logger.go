@@ -13,6 +13,7 @@ import (
 var (
 	Logger           *slog.Logger
 	lumberjackLogger *lumberjack.Logger
+	logPath          string
 )
 
 // ConsoleHandler is a custom slog handler for clean console output
@@ -65,7 +66,7 @@ func Setup(verbose bool) error {
 		return fmt.Errorf("could not create log directory: %w", err)
 	}
 
-	logPath := filepath.Join(logDir, "smpc.log")
+	logPath = filepath.Join(logDir, "smpc.log")
 
 	// Set up lumberjack for log rotation
 	lumberjackLogger = &lumberjack.Logger{
@@ -106,6 +107,11 @@ func Setup(verbose bool) error {
 	slog.Info("=== SMPC started ===")
 
 	return nil
+}
+
+// GetLogPath returns the path to the current log file
+func GetLogPath() string {
+	return logPath
 }
 
 // Close closes the log file and flushes any buffered data

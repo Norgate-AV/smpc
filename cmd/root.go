@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Norgate-AV/smpc/internal/compiler"
+	"github.com/Norgate-AV/smpc/internal/logging"
 	"github.com/Norgate-AV/smpc/internal/simpl"
 	"github.com/Norgate-AV/smpc/internal/version"
 	"github.com/Norgate-AV/smpc/internal/windows"
@@ -20,6 +22,7 @@ import (
 var (
 	verbose      bool
 	recompileAll bool
+	showLogs     bool
 	// Track SIMPL Windows for cleanup on interrupt
 	simplHwnd uintptr
 	simplPid  uint32
@@ -29,7 +32,7 @@ var RootCmd = &cobra.Command{
 	Use:     "smpc <file-path>",
 	Short:   "smpc - Automate compilation of .smw files",
 	Version: version.GetVersion(),
-	Args:    validateSmwFile,
+	Args:    validateArgs,
 	RunE:    Execute,
 }
 
@@ -40,10 +43,40 @@ func init() {
 	// Add flags
 	RootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "V", false, "enable verbose output")
 	RootCmd.PersistentFlags().BoolVarP(&recompileAll, "recompile-all", "r", false, "trigger Recompile All (Alt+F12) instead of Compile (F12)")
+	RootCmd.PersistentFlags().BoolVarP(&showLogs, "logs", "l", false, "print the current log file to stdout and exit")
 }
 
-// validateSmwFile validates that exactly one argument is provided and it has .smw extension
-func validateSmwFile(cmd *cobra.Command, args []string) error {
+// validateArgs validates arguments or handles --logs flag
+func validateArgs(cmd *cobra.Command, args []string) error {
+	// If --logs flag is set, print log file and exit
+	if showLogs {
+		logPath := logging.GetLogPath()
+		if logPath == "" {
+			fmt.Fprintln(os.Stderr, "ERROR: Log file path not initialized")
+			os.Exit(1)
+		}
+
+		file, err := os.Open(logPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				fmt.Fprintf(os.Stderr, "Log file does not exist: %s\n", logPath)
+				os.Exit(1)
+			}
+			fmt.Fprintf(os.Stderr, "ERROR: Failed to open log file: %v\n", err)
+			os.Exit(1)
+		}
+		defer file.Close()
+
+		if _, err := io.Copy(os.Stdout, file); err != nil {
+			fmt.Fprintf(os.Stderr, "ERROR: Failed to read log file: %v\n", err)
+			os.Exit(1)
+		}
+
+		os.Exit(0)
+		return nil
+	}
+
+	// Otherwise, validate .smw file argument
 	if err := cobra.ExactArgs(1)(cmd, args); err != nil {
 		return err
 	}
