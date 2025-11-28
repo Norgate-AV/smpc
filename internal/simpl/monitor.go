@@ -2,7 +2,7 @@ package simpl
 
 import (
 	"context"
-	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/Norgate-AV/smpc/internal/windows"
@@ -28,10 +28,10 @@ func StartMonitoring(ctx context.Context) {
 	// Init channel
 	windows.MonitorCh = make(chan windows.WindowEvent, 64)
 	if pid == 0 {
-		fmt.Println("[DEBUG] Window monitor falling back to all processes (SIMPL PID not found yet)")
+		slog.Debug("Window monitor falling back to all processes (SIMPL PID not found yet)")
 		windows.StartWindowMonitor(0, 500*time.Millisecond)
 	} else {
-		fmt.Printf("[DEBUG] Window monitor targeting SIMPL PID %d\n", pid)
+		slog.Debug("Window monitor targeting SIMPL PID", "pid", pid)
 		windows.StartWindowMonitor(pid, 500*time.Millisecond)
 	}
 

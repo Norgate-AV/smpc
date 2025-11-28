@@ -3,7 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -57,32 +57,32 @@ func validateSmwFile(cmd *cobra.Command, args []string) error {
 }
 
 func Execute(cmd *cobra.Command, args []string) error {
-	log.Printf("Execute() called with args: %v", args)
-	log.Printf("Flags: verbose=%v, recompileAll=%v", verbose, recompileAll)
+	slog.Debug("Execute() called", "args", args)
+	slog.Debug("Flags set", "verbose", verbose, "recompileAll", recompileAll)
 
 	// Check if running as admin
-	log.Println("Checking elevation status...")
+	slog.Debug("Checking elevation status")
 	if !windows.IsElevated() {
-		fmt.Println("This program requires administrator privileges.")
-		fmt.Println("Relaunching as administrator...")
-		log.Println("Not elevated, relaunching as admin...")
+		slog.Info("This program requires administrator privileges")
+		slog.Info("Relaunching as administrator")
+		slog.Debug("Not elevated, relaunching as admin")
 
 		if err := windows.RelaunchAsAdmin(); err != nil {
-			log.Printf("RelaunchAsAdmin failed: %v", err)
+			slog.Error("RelaunchAsAdmin failed", "error", err)
 			return fmt.Errorf("error relaunching as admin: %w", err)
 		}
 
 		// Exit this instance, the elevated one will continue
-		log.Println("Relaunched successfully, exiting non-elevated instance")
+		slog.Debug("Relaunched successfully, exiting non-elevated instance")
 		return nil
 	}
 
-	fmt.Println("Running with administrator privileges ✓")
-	log.Println("Running with administrator privileges")
+	slog.Info("Running with administrator privileges ✓")
+	slog.Debug("Running with administrator privileges")
 
 	// Get the file path from the command arguments
 	filePath := args[0]
-	log.Printf("Processing file: %s", filePath)
+	slog.Debug("Processing file", "path", filePath)
 
 	// Check if the file exists
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
@@ -96,20 +96,20 @@ func Execute(cmd *cobra.Command, args []string) error {
 	}
 
 	// Start background window monitor to observe dialogs and window changes in real time
-	log.Println("Creating context and starting monitor goroutine...")
+	slog.Debug("Creating context and starting monitor goroutine")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel() // Ensure the goroutine is cleaned up
 	go simpl.StartMonitoring(ctx)
-	log.Println("Monitor goroutine started")
+	slog.Debug("Monitor goroutine started")
 
 	// Open the file with SIMPL Windows application using elevated privileges
 	// SW_SHOWNORMAL = 1
-	log.Printf("Launching SIMPL Windows with file: %s", absPath)
+	slog.Debug("Launching SIMPL Windows with file", "path", absPath)
 	if err := windows.ShellExecute(0, "runas", simpl.SIMPL_WINDOWS_PATH, absPath, "", 1); err != nil {
-		log.Printf("ShellExecute failed: %v", err)
+		slog.Error("ShellExecute failed", "error", err)
 		return fmt.Errorf("error opening file: %w", err)
 	}
-	log.Println("SIMPL Windows launched successfully")
+	slog.Debug("SIMPL Windows launched successfully")
 
 	// At this point, the SIMPL Windows process should have started
 	// Meaning, if we fail from any point onward, we need to make sure we
@@ -121,36 +121,36 @@ func Execute(cmd *cobra.Command, args []string) error {
 	earlyPid := simpl.GetPid()
 	if earlyPid != 0 {
 		simplPid = earlyPid
-		log.Printf("Early PID detection: %d", earlyPid)
+		slog.Debug("Early PID detection", "pid", earlyPid)
 	}
 
 	// Set up Windows console control handler to catch window close events
 	// This is more reliable than signal handling on Windows
 	windows.SetConsoleCtrlHandler(func(ctrlType uint32) uintptr {
-		log.Printf("\n\nReceived console control event: %s (%d)", windows.GetCtrlTypeName(ctrlType), ctrlType)
-		fmt.Printf("\n\nReceived console control event: %s, cleaning up...\n", windows.GetCtrlTypeName(ctrlType))
+		slog.Debug("Received console control event", "type", windows.GetCtrlTypeName(ctrlType), "code", ctrlType)
+		slog.Info("Received console control event, cleaning up", "type", windows.GetCtrlTypeName(ctrlType))
 
 		// Try to cleanup using hwnd if we have it
 		if simplHwnd != 0 {
-			log.Printf("Cleaning up SIMPL Windows (hwnd: %d)", simplHwnd)
+			slog.Debug("Cleaning up SIMPL Windows", "hwnd", simplHwnd)
 			simpl.Cleanup(simplHwnd)
 		} else if simplPid != 0 {
 			// If we don't have hwnd yet but have PID, force terminate
-			log.Printf("Force terminating SIMPL Windows (PID: %d)", simplPid)
+			slog.Debug("Force terminating SIMPL Windows", "pid", simplPid)
 			windows.TerminateProcess(simplPid)
 		} else {
 			// Last resort - try to find and kill any smpwin.exe process we may have started
-			log.Println("Attempting to find and terminate SIMPL Windows process...")
+			slog.Debug("Attempting to find and terminate SIMPL Windows process")
 			pid := simpl.GetPid()
 			if pid != 0 {
-				log.Printf("Found SIMPL Windows PID: %d, terminating...", pid)
+				slog.Debug("Found SIMPL Windows PID, terminating", "pid", pid)
 				windows.TerminateProcess(pid)
 			} else {
-				log.Println("Could not find SIMPL Windows process to terminate")
+				slog.Debug("Could not find SIMPL Windows process to terminate")
 			}
 		}
 
-		log.Println("Cleanup completed, exiting")
+		slog.Debug("Cleanup completed, exiting")
 
 		// Must call os.Exit to actually terminate the process
 		// Otherwise the handler returns and execution continues
@@ -166,81 +166,81 @@ func Execute(cmd *cobra.Command, args []string) error {
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		sig := <-sigChan
-		log.Printf("\n\nReceived signal: %v", sig)
-		fmt.Printf("\n\nReceived interrupt signal, cleaning up...\n")
-		log.Println("Running cleanup due to interrupt...")
+		slog.Debug("Received signal", "signal", sig)
+		slog.Info("Received interrupt signal, cleaning up")
+		slog.Debug("Running cleanup due to interrupt")
 
 		// Try to cleanup using hwnd if we have it
 		if simplHwnd != 0 {
-			log.Printf("Cleaning up SIMPL Windows (hwnd: %d)", simplHwnd)
+			slog.Debug("Cleaning up SIMPL Windows", "hwnd", simplHwnd)
 			simpl.Cleanup(simplHwnd)
 		} else if simplPid != 0 {
 			// If we don't have hwnd yet but have PID, force terminate
-			log.Printf("Force terminating SIMPL Windows (PID: %d)", simplPid)
+			slog.Debug("Force terminating SIMPL Windows", "pid", simplPid)
 			windows.TerminateProcess(simplPid)
 		} else {
 			// Last resort - try to find and kill any smpwin.exe process we may have started
-			log.Println("Attempting to find and terminate SIMPL Windows process...")
+			slog.Debug("Attempting to find and terminate SIMPL Windows process")
 			pid := simpl.GetPid()
 			if pid != 0 {
-				log.Printf("Found SIMPL Windows PID: %d, terminating...", pid)
+				slog.Debug("Found SIMPL Windows PID, terminating", "pid", pid)
 				windows.TerminateProcess(pid)
 			}
 		}
 
-		log.Println("Cleanup completed, exiting")
+		slog.Debug("Cleanup completed, exiting")
 		os.Exit(130) // Standard exit code for Ctrl+C
 	}()
-	log.Println("Signal handler registered (early)")
+	slog.Debug("Signal handler registered (early)")
 
 	// Wait for the main window to appear (with a 1 minute timeout)
-	fmt.Printf("Waiting for SIMPL Windows to fully launch...\n")
-	log.Println("Waiting for SIMPL Windows window to appear...")
+	slog.Info("Waiting for SIMPL Windows to fully launch...")
+	slog.Debug("Waiting for SIMPL Windows window to appear")
 	hwnd, found := simpl.WaitForAppear(60 * time.Second)
 	if !found {
-		log.Println("Timeout waiting for window to appear")
+		slog.Error("Timeout waiting for window to appear")
 		return fmt.Errorf("timed out waiting for SIMPL Windows window to appear")
 	}
-	log.Printf("Window appeared with hwnd: %d", hwnd)
+	slog.Debug("Window appeared", "hwnd", hwnd)
 
 	// Store hwnd for signal handler cleanup
 	simplHwnd = hwnd
-	log.Printf("Stored hwnd for signal handler: %d", simplHwnd)
+	slog.Debug("Stored hwnd for signal handler", "hwnd", simplHwnd)
 
 	// Set up deferred cleanup to ensure SIMPL Windows is closed on exit
 	defer simpl.Cleanup(hwnd)
-	log.Println("Cleanup deferred")
+	slog.Debug("Cleanup deferred")
 
 	// Wait for the window to be fully ready and responsive (with a 30 second timeout)
-	log.Println("Waiting for window to be ready...")
+	slog.Debug("Waiting for window to be ready")
 	if !simpl.WaitForReady(hwnd, 30*time.Second) {
-		log.Println("Window not responding properly")
+		slog.Error("Window not responding properly")
 		return fmt.Errorf("window appeared but is not responding properly")
 	}
-	log.Println("Window is ready")
+	slog.Debug("Window is ready")
 
 	// Small extra delay to allow UI to finish settling
-	fmt.Println("Waiting a few extra seconds for UI to settle...")
+	slog.Info("Waiting a few extra seconds for UI to settle...")
 	time.Sleep(5 * time.Second)
 
-	fmt.Printf("Successfully opened file: %s\n", absPath)
+	slog.Info("Successfully opened file", "path", absPath)
 
 	// Detect SIMPL Windows process PID for dialog monitoring
-	log.Println("Getting SIMPL Windows process PID...")
+	slog.Debug("Getting SIMPL Windows process PID")
 	pid := simpl.GetPid()
 	if pid == 0 {
-		log.Println("Warning: Could not determine PID")
-		fmt.Println("Warning: Could not determine SIMPL Windows process PID; dialog detection may be limited")
+		slog.Warn("Could not determine PID")
+		slog.Info("Warning: Could not determine SIMPL Windows process PID; dialog detection may be limited")
 	} else {
-		log.Printf("SIMPL Windows PID: %d", pid)
+		slog.Debug("SIMPL Windows PID detected", "pid", pid)
 		simplPid = pid // Store for signal handler
 	}
 
 	// Check for "Operation Complete" dialog that may appear after loading the file
 	// This dialog must be dismissed before we can send compile keystrokes
 	if pid != 0 && windows.MonitorCh != nil {
-		fmt.Println("Checking for 'Operation Complete' dialog...")
-		log.Println("Checking for Operation Complete dialog...")
+		slog.Info("Checking for 'Operation Complete' dialog...")
+		slog.Debug("Checking for Operation Complete dialog")
 		ev, ok := windows.WaitOnMonitor(3*time.Second,
 			func(e windows.WindowEvent) bool { return strings.EqualFold(e.Title, "Operation Complete") },
 			func(e windows.WindowEvent) bool {
@@ -249,76 +249,76 @@ func Execute(cmd *cobra.Command, args []string) error {
 		)
 
 		if ok {
-			log.Printf("Operation Complete dialog detected: %s", ev.Title)
-			fmt.Printf("Detected dialog: %s\n", ev.Title)
-			fmt.Println("Dismissing 'Operation Complete' dialog...")
+			slog.Debug("Operation Complete dialog detected", "title", ev.Title)
+			slog.Info("Detected dialog: " + ev.Title)
+			slog.Info("Dismissing 'Operation Complete' dialog...")
 			windows.CloseWindow(ev.Hwnd, ev.Title)
 			time.Sleep(500 * time.Millisecond)
-			log.Println("Dialog dismissed")
+			slog.Debug("Dialog dismissed")
 		} else {
-			log.Println("No Operation Complete dialog detected")
+			slog.Debug("No Operation Complete dialog detected")
 		}
 	}
 
 	// Confirm elevation before sending keystrokes
 	if windows.IsElevated() {
-		fmt.Println("[DEBUG] Process is elevated, proceeding with keystroke injection")
+		slog.Debug("Process is elevated, proceeding with keystroke injection")
 	} else {
-		fmt.Println("[DEBUG] WARNING - Process is NOT elevated, keystroke injection may fail")
+		slog.Warn("Process is NOT elevated, keystroke injection may fail")
 	}
 
 	// Bring window to foreground and send F12 (compile)
-	log.Println("Bringing window to foreground...")
+	slog.Debug("Bringing window to foreground...")
 	_ = windows.SetForeground(hwnd)
 
-	fmt.Println("Waiting for window to receive focus...")
+	slog.Info("Waiting for window to receive focus...")
 	time.Sleep(1 * time.Second)
 
 	// Use keybd_event (older API that works with SIMPL Windows)
-	log.Println("Preparing to send keystroke...")
+	slog.Debug("Preparing to send keystroke")
 	var keystrokeSent bool
 	if recompileAll {
-		fmt.Println("Sending Alt+F12 keystroke to trigger Recompile All...")
-		log.Println("Sending Alt+F12 keystroke...")
+		slog.Info("Sending Alt+F12 keystroke to trigger Recompile All...")
+		slog.Debug("Sending Alt+F12 keystroke")
 		keystrokeSent = windows.SendAltF12()
 		if keystrokeSent {
-			fmt.Println("Successfully sent Alt+F12 keystroke")
-			log.Println("Alt+F12 sent successfully")
+			slog.Info("Successfully sent Alt+F12 keystroke")
+			slog.Debug("Alt+F12 sent successfully")
 		} else {
-			log.Println("Failed to send Alt+F12")
+			slog.Error("Failed to send Alt+F12")
 		}
 	} else {
-		fmt.Println("Sending F12 keystroke to trigger compile...")
-		log.Println("Sending F12 keystroke...")
+		slog.Info("Sending F12 keystroke to trigger compile...")
+		slog.Debug("Sending F12 keystroke")
 		keystrokeSent = windows.SendF12()
 		if keystrokeSent {
-			fmt.Println("Successfully sent F12 keystroke")
-			log.Println("F12 sent successfully")
+			slog.Info("Successfully sent F12 keystroke")
+			slog.Debug("F12 sent successfully")
 		} else {
-			log.Println("Failed to send F12")
+			slog.Error("Failed to send F12")
 		}
 	}
 
 	if keystrokeSent {
-		log.Println("Starting compile monitoring...")
+		slog.Debug("Starting compile monitoring")
 		// Detect "Incomplete Symbols" error dialog - this is a fatal error
 		if pid != 0 && windows.MonitorCh != nil {
-			fmt.Println("Checking for 'Incomplete Symbols' error dialog...")
+			slog.Info("Checking for 'Incomplete Symbols' error dialog...")
 			ev, ok := windows.WaitOnMonitor(2*time.Second,
 				func(e windows.WindowEvent) bool { return strings.EqualFold(e.Title, "Incomplete Symbols") },
 				func(e windows.WindowEvent) bool { return strings.Contains(strings.ToLower(e.Title), "incomplete") },
 			)
 
 			if ok {
-				fmt.Printf("\n*** ERROR: %s ***\n", ev.Title)
-				fmt.Println("The program contains incomplete symbols and cannot be compiled.")
-				fmt.Println("Please fix the incomplete symbols in SIMPL Windows before attempting to compile.")
+				slog.Error("ERROR: Incomplete Symbols detected", "title", ev.Title)
+				slog.Info("The program contains incomplete symbols and cannot be compiled.")
+				slog.Info("Please fix the incomplete symbols in SIMPL Windows before attempting to compile.")
 
 				// Extract error details from the dialog
 				childInfos := windows.CollectChildInfos(ev.Hwnd)
 				for _, ci := range childInfos {
 					if ci.ClassName == "Edit" && len(ci.Text) > 50 {
-						fmt.Printf("\nDetails:\n%s\n", ci.Text)
+						slog.Info("Details", "text", ci.Text)
 						break
 					}
 				}
@@ -329,26 +329,26 @@ func Execute(cmd *cobra.Command, args []string) error {
 
 		// Detect save prompt ("Convert/Compile") via monitor channel and auto-confirm "Yes"
 		if pid != 0 && windows.MonitorCh != nil {
-			fmt.Println("Watching for 'Convert/Compile' save prompt...")
+			slog.Info("Watching for 'Convert/Compile' save prompt...")
 			ev, ok := windows.WaitOnMonitor(5*time.Second,
 				func(e windows.WindowEvent) bool { return strings.EqualFold(e.Title, "Convert/Compile") },
 				func(e windows.WindowEvent) bool { return strings.Contains(strings.ToLower(e.Title), "convert/compile") },
 			)
 
 			if ok {
-				fmt.Printf("Detected save prompt: %s\n", ev.Title)
+				slog.Info("Detected save prompt", "title", ev.Title)
 				_ = windows.SetForeground(ev.Hwnd)
 				time.Sleep(300 * time.Millisecond)
 				_ = windows.SendEnter()
-				fmt.Println("Auto-confirmed save prompt with 'Yes'")
+				slog.Info("Auto-confirmed save prompt with 'Yes'")
 			} else {
-				fmt.Println("[DEBUG] Save prompt not detected within timeout")
+				slog.Debug("Save prompt not detected within timeout")
 			}
 		}
 
 		// Detect "Commented out Symbols and/or Devices" dialog and auto-confirm "Yes"
 		if pid != 0 && windows.MonitorCh != nil {
-			fmt.Println("Watching for 'Commented out Symbols' dialog...")
+			slog.Info("Watching for 'Commented out Symbols' dialog...")
 			ev, ok := windows.WaitOnMonitor(5*time.Second,
 				func(e windows.WindowEvent) bool {
 					return strings.EqualFold(e.Title, "Commented out Symbols and/or Devices")
@@ -357,28 +357,28 @@ func Execute(cmd *cobra.Command, args []string) error {
 			)
 
 			if ok {
-				fmt.Printf("Detected dialog: %s\n", ev.Title)
+				slog.Info("Detected dialog", "title", ev.Title)
 				_ = windows.SetForeground(ev.Hwnd)
 				time.Sleep(300 * time.Millisecond)
 				_ = windows.SendEnter()
-				fmt.Println("Auto-confirmed 'Commented out Symbols' dialog with 'Yes'")
+				slog.Info("Auto-confirmed 'Commented out Symbols' dialog with 'Yes'")
 			} else {
-				fmt.Println("[DEBUG] 'Commented out Symbols' dialog not detected within timeout")
+				slog.Debug("'Commented out Symbols' dialog not detected within timeout")
 			}
 		}
 
 		// Detect compile progress start ("Compiling...") via monitor channel
 		if pid != 0 && windows.MonitorCh != nil {
-			fmt.Println("Waiting for 'Compiling...' dialog...")
+			slog.Info("Waiting for 'Compiling...' dialog...")
 			ev, ok := windows.WaitOnMonitor(30*time.Second,
 				func(e windows.WindowEvent) bool { return strings.EqualFold(e.Title, "Compiling...") },
 				func(e windows.WindowEvent) bool { return strings.Contains(strings.ToLower(e.Title), "compiling") },
 			)
 
 			if ok {
-				fmt.Printf("Compile started: %s\n", ev.Title)
+				slog.Info("Compile started", "title", ev.Title)
 			} else {
-				fmt.Println("Warning: Did not detect 'Compiling...' dialog within timeout")
+				slog.Warn("Did not detect 'Compiling...' dialog within timeout")
 			}
 		}
 
@@ -393,7 +393,7 @@ func Execute(cmd *cobra.Command, args []string) error {
 
 		// Detect and parse Compile Complete dialog
 		if pid != 0 && windows.MonitorCh != nil {
-			fmt.Println("Waiting for 'Compile Complete' dialog...")
+			slog.Info("Waiting for 'Compile Complete' dialog...")
 			ev, ok := windows.WaitOnMonitor(5*time.Minute, // Increased timeout for large programs
 				func(e windows.WindowEvent) bool { return strings.EqualFold(e.Title, "Compile Complete") },
 				func(e windows.WindowEvent) bool {
@@ -402,13 +402,13 @@ func Execute(cmd *cobra.Command, args []string) error {
 			)
 
 			if ok {
-				fmt.Printf("Detected: %s\n", ev.Title)
+				slog.Info("Detected", "title", ev.Title)
 				compileCompleteHwnd = ev.Hwnd // Store for later closing
 				childInfos := windows.CollectChildInfos(ev.Hwnd)
-				fmt.Printf("[DEBUG] Child controls in %s dialog:\n", ev.Title)
+				slog.Debug("Child controls in dialog", "title", ev.Title)
 
 				for _, ci := range childInfos {
-					fmt.Printf("[DEBUG] class=%q text=%q (length=%d)\n", ci.ClassName, ci.Text, len(ci.Text))
+					slog.Debug("Child control", "class", ci.ClassName, "text", ci.Text, "length", len(ci.Text))
 				} // Parse stats from Compile Complete dialog
 				for _, ci := range childInfos {
 					text := strings.ReplaceAll(ci.Text, "\r\n", "\n")
@@ -442,7 +442,7 @@ func Execute(cmd *cobra.Command, args []string) error {
 
 		// Detect and parse Program Compilation dialog (if warnings/notices/errors exist)
 		if pid != 0 && windows.MonitorCh != nil && (warnings > 0 || notices > 0 || errors > 0) {
-			fmt.Println("Waiting for 'Program Compilation' dialog...")
+			slog.Info("Waiting for 'Program Compilation' dialog...")
 			ev, ok := windows.WaitOnMonitor(10*time.Second,
 				func(e windows.WindowEvent) bool { return strings.EqualFold(e.Title, "Program Compilation") },
 				func(e windows.WindowEvent) bool {
@@ -451,12 +451,12 @@ func Execute(cmd *cobra.Command, args []string) error {
 			)
 
 			if ok {
-				fmt.Printf("Detected: %s\n", ev.Title)
+				slog.Info("Detected", "title", ev.Title)
 				childInfos := windows.CollectChildInfos(ev.Hwnd)
-				fmt.Printf("[DEBUG] Child controls in %s dialog:\n", ev.Title)
+				slog.Debug("Child controls in dialog", "title", ev.Title)
 
 				for _, ci := range childInfos {
-					fmt.Printf("[DEBUG] class=%q text=%q (length=%d)\n", ci.ClassName, ci.Text, len(ci.Text))
+					slog.Debug("Child control", "class", ci.ClassName, "text", ci.Text, "length", len(ci.Text))
 				}
 
 				// Extract messages from ListBox and categorize them
@@ -493,32 +493,32 @@ func Execute(cmd *cobra.Command, args []string) error {
 				}
 
 				if len(errorMessages) > 0 {
-					fmt.Println("\nError messages:")
+					slog.Info("Error messages:")
 					for i, msg := range errorMessages {
-						fmt.Printf("  %d. %s\n", i+1, msg)
+						slog.Info("", "number", i+1, "message", msg)
 					}
 				}
 
 				if len(warningMessages) > 0 {
-					fmt.Println("\nWarning messages:")
+					slog.Info("Warning messages:")
 					for i, msg := range warningMessages {
-						fmt.Printf("  %d. %s\n", i+1, msg)
+						slog.Info("", "number", i+1, "message", msg)
 					}
 				}
 
 				if len(noticeMessages) > 0 {
-					fmt.Println("\nNotice messages:")
+					slog.Info("Notice messages:")
 					for i, msg := range noticeMessages {
-						fmt.Printf("  %d. %s\n", i+1, msg)
+						slog.Info("", "number", i+1, "message", msg)
 					}
 				}
 			} else {
-				fmt.Println("Note: Program Compilation dialog not detected (may not have appeared)")
+				slog.Debug("Program Compilation dialog not detected (may not have appeared)")
 			}
 		}
 
 		// Close SIMPL Windows after successful compilation
-		fmt.Println("\nClosing dialogs and SIMPL Windows...")
+		slog.Info("Closing dialogs and SIMPL Windows...")
 
 		// First, close the "Compile Complete" dialog if it's still open
 		if compileCompleteHwnd != 0 {
@@ -534,13 +534,13 @@ func Execute(cmd *cobra.Command, args []string) error {
 			)
 
 			if ok {
-				fmt.Printf("Detected dialog: %s (clicking 'No' to close without saving)\n", ev.Title)
+				slog.Info("Detected dialog (clicking 'No' to close without saving)", "title", ev.Title)
 				// Find and click the "No" button directly
 				if windows.FindAndClickButton(ev.Hwnd, "&No") {
-					fmt.Println("[DEBUG] Successfully clicked 'No' button")
+					slog.Debug("Successfully clicked 'No' button")
 					time.Sleep(500 * time.Millisecond)
 				} else {
-					fmt.Println("[DEBUG] WARNING: Could not find 'No' button, trying to close dialog")
+					slog.Warn("Could not find 'No' button, trying to close dialog")
 					windows.CloseWindow(ev.Hwnd, "Confirmation dialog")
 					time.Sleep(500 * time.Millisecond)
 				}
@@ -551,33 +551,33 @@ func Execute(cmd *cobra.Command, args []string) error {
 		if hwnd != 0 {
 			windows.CloseWindow(hwnd, "SIMPL Windows")
 			time.Sleep(1 * time.Second)
-			fmt.Println("SIMPL Windows closed successfully")
+			slog.Info("SIMPL Windows closed successfully")
 		}
 
 		// Print final summary
 		if pid != 0 && windows.MonitorCh != nil {
-			fmt.Printf("\n=== Compile Summary ===\n")
+			slog.Info("=== Compile Summary ===")
 			if errors > 0 {
-				fmt.Printf("Errors: %d\n", errors)
+				slog.Info("Errors", "count", errors)
 			}
-			fmt.Printf("Warnings: %d\n", warnings)
-			fmt.Printf("Notices: %d\n", notices)
-			fmt.Printf("Compile Time: %.2f seconds\n", compileTime)
-			fmt.Println("=======================")
+			slog.Info("Warnings", "count", warnings)
+			slog.Info("Notices", "count", notices)
+			slog.Info("Compile Time", "seconds", compileTime)
+			slog.Info("=======================")
 		}
 
-		fmt.Println("Press Enter to exit...")
+		slog.Info("Press Enter to exit...")
 		fmt.Scanln()
 
 		// Exit with error code if compilation failed
 		if hasErrors {
-			log.Printf("Compilation failed with %d errors", errors)
+			slog.Error("Compilation failed", "errors", errors)
 			return fmt.Errorf("compilation failed with %d error(s)", errors)
 		}
 
-		log.Println("Compilation completed successfully")
+		slog.Debug("Compilation completed successfully")
 	}
 
-	log.Println("Execute() completed successfully")
+	slog.Debug("Execute() completed successfully")
 	return nil
 }

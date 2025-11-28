@@ -2,13 +2,14 @@ package windows
 
 import (
 	"fmt"
+	"log/slog"
 	"syscall"
 	"time"
 	"unsafe"
 )
 
 func CloseWindow(hwnd uintptr, title string) {
-	fmt.Printf("Closing window: %s\n", title)
+	slog.Info("Closing window", "title", title)
 	procPostMessageW.Call(hwnd, WM_CLOSE, 0, 0)
 	time.Sleep(500 * time.Millisecond)
 }
@@ -16,23 +17,23 @@ func CloseWindow(hwnd uintptr, title string) {
 func SetForeground(hwnd uintptr) bool {
 	// Restore window if minimized, then bring to foreground
 	r1, r2, lastErr := procShowWindow.Call(hwnd, uintptr(SW_RESTORE))
-	fmt.Printf("[DEBUG] ShowWindow(SW_RESTORE) r1=%d r2=%d err=%v\n", r1, r2, lastErr)
+	slog.Debug("ShowWindow(SW_RESTORE)", "r1", r1, "r2", r2, "err", lastErr)
 
 	ret, _, err := procSetForegroundWindow.Call(hwnd)
 	if ret == 0 {
-		fmt.Printf("[DEBUG] SetForegroundWindow failed: %v\n", err)
+		slog.Debug("SetForegroundWindow failed", "error", err)
 		return false
 	}
 
-	fmt.Println("[DEBUG] SetForegroundWindow succeeded")
+	slog.Debug("SetForegroundWindow succeeded")
 
 	// Give it a moment and verify
 	time.Sleep(500 * time.Millisecond)
 	fgHwnd, _, _ := procGetForegroundWindow.Call()
 	if fgHwnd == hwnd {
-		fmt.Println("[DEBUG] Window confirmed in foreground")
+		slog.Debug("Window confirmed in foreground")
 	} else {
-		fmt.Printf("[DEBUG] WARNING - Different window in foreground (expected %d, got %d)\n", hwnd, fgHwnd)
+		slog.Warn("Different window in foreground", "expected", hwnd, "got", fgHwnd)
 	}
 
 	return true

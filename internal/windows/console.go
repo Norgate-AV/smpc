@@ -1,7 +1,7 @@
 package windows
 
 import (
-	"log"
+	"log/slog"
 	"syscall"
 )
 
@@ -27,11 +27,11 @@ func SetConsoleCtrlHandler(handler ConsoleCtrlHandler) error {
 	)
 
 	if ret == 0 {
-		log.Printf("SetConsoleCtrlHandler failed: %v", err)
+		slog.Error("SetConsoleCtrlHandler failed", "error", err)
 		return err
 	}
 
-	log.Println("Windows console control handler registered")
+	slog.Debug("Windows console control handler registered")
 	return nil
 }
 

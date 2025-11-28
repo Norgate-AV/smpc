@@ -1,7 +1,7 @@
 package windows
 
 import (
-	"fmt"
+	"log/slog"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -42,7 +42,7 @@ func GetListBoxItems(hwnd uintptr) []string {
 	// Get the count of items in the ListBox
 	countResult, _, _ := procSendMessageW.Call(hwnd, LB_GETCOUNT, 0, 0)
 	count := int(countResult)
-	fmt.Printf("[DEBUG] getListBoxItems: hwnd=%d, count=%d\n", hwnd, count)
+	slog.Debug("getListBoxItems", "hwnd", hwnd, "count", count)
 
 	if count <= 0 {
 		return nil
@@ -62,7 +62,7 @@ func GetListBoxItems(hwnd uintptr) []string {
 		buf := make([]uint16, itemLen+1)
 		procSendMessageW.Call(hwnd, LB_GETTEXT, uintptr(i), uintptr(unsafe.Pointer(&buf[0])))
 		text := syscall.UTF16ToString(buf)
-		fmt.Printf("[DEBUG] getListBoxItems: item[%d]=%q\n", i, text)
+		slog.Debug("getListBoxItems item", "index", i, "text", text)
 		items = append(items, text)
 	}
 
@@ -73,16 +73,16 @@ func GetEditText(hwnd uintptr) string {
 	// Get the length of the text using SendMessageW directly
 	lengthResult, _, _ := procSendMessageW.Call(hwnd, WM_GETTEXTLENGTH, 0, 0)
 	length := int(lengthResult)
-	fmt.Printf("[DEBUG] getEditText: hwnd=%d, length=%d\n", hwnd, length)
+	slog.Debug("getEditText", "hwnd", hwnd, "length", length)
 	if length == 0 {
 		return ""
 	}
 	// Allocate buffer (add extra space for safety)
 	buf := make([]uint16, length+256)
 	result, _, _ := procSendMessageW.Call(hwnd, WM_GETTEXT, uintptr(len(buf)), uintptr(unsafe.Pointer(&buf[0])))
-	fmt.Printf("[DEBUG] getEditText: SendMessage returned %d\n", result)
+	slog.Debug("getEditText SendMessage result", "result", result)
 	text := syscall.UTF16ToString(buf)
-	fmt.Printf("[DEBUG] getEditText: extracted text length=%d, text=%q\n", len(text), text)
+	slog.Debug("getEditText extracted", "length", len(text), "text", text)
 	return text
 }
 
@@ -93,7 +93,7 @@ func FindAndClickButton(parentHwnd uintptr, buttonText string) bool {
 
 	for _, ci := range childInfos {
 		if ci.ClassName == "Button" && strings.EqualFold(ci.Text, buttonText) {
-			fmt.Printf("[DEBUG] Found button %q with hwnd=%d, sending click\n", buttonText, ci.Hwnd)
+			slog.Debug("Found button, sending click", "text", buttonText, "hwnd", ci.Hwnd)
 			// Send BN_CLICKED notification to parent
 			// WM_COMMAND: wParam = MAKEWPARAM(controlID, BN_CLICKED), lParam = hwnd
 			procSendMessageW.Call(parentHwnd, WM_COMMAND, uintptr(BN_CLICKED), ci.Hwnd)
@@ -101,7 +101,7 @@ func FindAndClickButton(parentHwnd uintptr, buttonText string) bool {
 		}
 	}
 
-	fmt.Printf("[DEBUG] Button %q not found\n", buttonText)
+	slog.Debug("Button not found", "text", buttonText)
 	return false
 }
 

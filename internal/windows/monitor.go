@@ -1,7 +1,7 @@
 package windows
 
 import (
-	"fmt"
+	"log/slog"
 	"sync"
 	"syscall"
 	"time"
@@ -95,7 +95,7 @@ func StartWindowMonitor(pid uint32, interval time.Duration) {
 	seen := make(map[uintptr]bool)
 
 	go func() {
-		fmt.Println("[DEBUG] Window monitor started")
+		slog.Debug("Window monitor started")
 		for {
 			windows := EnumerateWindows()
 
@@ -106,14 +106,14 @@ func StartWindowMonitor(pid uint32, interval time.Duration) {
 				if !seen[w.Hwnd] {
 					seen[w.Hwnd] = true
 					// Log top-level window info
-					fmt.Printf("[MON] hwnd=%d pid=%d class=%s title=%q\n", w.Hwnd, w.Pid, GetClassName(w.Hwnd), w.Title)
+					slog.Debug("Window detected", "hwnd", w.Hwnd, "pid", w.Pid, "class", GetClassName(w.Hwnd), "title", w.Title)
 
 					// Enumerate child controls and log their text
 					childTexts := CollectChildTexts(w.Hwnd)
 					if len(childTexts) > 0 {
 						for _, ct := range childTexts {
 							if ct != "" {
-								fmt.Printf("[MON]   child=%q\n", ct)
+								slog.Debug("Child control", "text", ct)
 							}
 						}
 					}

@@ -1,7 +1,7 @@
 package simpl
 
 import (
-	"fmt"
+	"log/slog"
 	"strings"
 	"syscall"
 	"time"
@@ -43,7 +43,7 @@ func FindWindow(processName string, debug bool) (uintptr, string) {
 
 	if targetPID == 0 {
 		if debug {
-			fmt.Println("[DEBUG] smpwin.exe process not found")
+			slog.Debug("smpwin.exe process not found")
 		}
 
 		return 0, ""
@@ -54,7 +54,7 @@ func FindWindow(processName string, debug bool) (uintptr, string) {
 	windowsList := windows.EnumerateWindows()
 
 	if debug {
-		fmt.Printf("[DEBUG] Found %d visible windows from smpwin.exe (PID: %d):\n", len(windowsList), targetPID)
+		slog.Debug("Found visible windows from smpwin.exe", "count", len(windowsList), "pid", targetPID)
 	}
 
 	// Look for windows belonging to our process
@@ -64,7 +64,7 @@ func FindWindow(processName string, debug bool) (uintptr, string) {
 	for _, w := range windowsList {
 		if w.Pid == targetPID {
 			if debug {
-				fmt.Printf("  - %s\n", w.Title)
+				slog.Debug("Window found", "title", w.Title)
 			}
 
 			// Skip splash screens and loading dialogs
@@ -98,7 +98,7 @@ func FindWindow(processName string, debug bool) (uintptr, string) {
 	// If we found a main window with a more specific title, use it
 	if mainWindow.Hwnd != 0 {
 		if debug {
-			fmt.Printf("[DEBUG] Found main window: %s\n", mainWindow.Title)
+			slog.Debug("Found main window", "title", mainWindow.Title)
 		}
 
 		return mainWindow.Hwnd, mainWindow.Title
@@ -107,7 +107,7 @@ func FindWindow(processName string, debug bool) (uintptr, string) {
 	// If we only found the generic splash screen, return false to keep waiting
 	if splashWindow.Hwnd != 0 {
 		if debug {
-			fmt.Printf("[DEBUG] Only found splash screen, continuing to wait...\n")
+			slog.Debug("Only found splash screen, continuing to wait")
 		}
 
 		return 0, ""
@@ -166,9 +166,9 @@ func isWindowResponsive(hwnd uintptr, debug bool) bool {
 	responsive := ret != 0
 	if debug {
 		if responsive {
-			fmt.Println("[DEBUG] Window is responsive")
+			slog.Debug("Window is responsive")
 		} else {
-			fmt.Println("[DEBUG] Window is not responding")
+			slog.Debug("Window is not responding")
 		}
 	}
 
@@ -179,7 +179,7 @@ func WaitForReady(hwnd uintptr, timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
 	elapsed := 0
 
-	fmt.Println("Waiting for window to be fully ready...")
+	slog.Info("Waiting for window to be fully ready...")
 
 	for time.Now().Before(deadline) {
 		debug := elapsed%30 == 0 // Debug every 3 seconds
@@ -195,7 +195,7 @@ func WaitForReady(hwnd uintptr, timeout time.Duration) bool {
 			}
 
 			if consecutiveResponses >= 2 {
-				fmt.Println("[DEBUG] Window is stable and ready")
+				slog.Debug("Window is stable and ready")
 				return true
 			}
 		}
@@ -204,7 +204,7 @@ func WaitForReady(hwnd uintptr, timeout time.Duration) bool {
 		elapsed++
 	}
 
-	fmt.Println("[DEBUG] Timeout waiting for window to be ready")
+	slog.Debug("Timeout waiting for window to be ready")
 	return false
 }
 
@@ -219,7 +219,7 @@ func WaitForAppear(timeout time.Duration) (uintptr, bool) {
 		// Check for the main SIMPL Windows window
 		hwnd, title := FindWindow("smpwin.exe", debug)
 		if hwnd != 0 {
-			fmt.Printf("[DEBUG] Found main SIMPL Windows window: %s\n", title)
+			slog.Debug("Found main SIMPL Windows window", "title", title)
 			return hwnd, true
 		}
 
@@ -227,10 +227,10 @@ func WaitForAppear(timeout time.Duration) (uintptr, bool) {
 		elapsed++
 	}
 
-	fmt.Println("[DEBUG] Timeout reached, performing final detailed check...")
+	slog.Debug("Timeout reached, performing final detailed check")
 	hwnd, title := FindWindow("smpwin.exe", true)
 	if hwnd != 0 {
-		fmt.Printf("[DEBUG] Found window at timeout: %s\n", title)
+		slog.Debug("Found window at timeout", "title", title)
 		return hwnd, true
 	}
 
@@ -239,7 +239,7 @@ func WaitForAppear(timeout time.Duration) (uintptr, bool) {
 
 // Cleanup ensures SIMPL Windows is properly closed, with fallback to force termination
 func Cleanup(hwnd uintptr) {
-	fmt.Println("\nCleaning up...")
+	slog.Info("Cleaning up...")
 	if hwnd == 0 {
 		return
 	}
@@ -251,11 +251,11 @@ func Cleanup(hwnd uintptr) {
 	// Verify the window is actually closed
 	testHwnd, _ := FindWindow("SIMPL Windows", false)
 	if testHwnd != 0 {
-		fmt.Println("[DEBUG] WARNING: SIMPL Windows did not close properly")
+		slog.Warn("SIMPL Windows did not close properly")
 		// If we have the PID, attempt to terminate the process
 		pid := GetPid()
 		if pid != 0 {
-			fmt.Printf("[DEBUG] Attempting to force terminate process (PID: %d)...\n", pid)
+			slog.Debug("Attempting to force terminate process", "pid", pid)
 			windows.TerminateProcess(pid)
 		}
 	}
