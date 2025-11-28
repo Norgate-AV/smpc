@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -225,358 +224,42 @@ func Execute(cmd *cobra.Command, args []string) error {
 
 	slog.Info("Successfully opened file", "path", absPath)
 
-	// Detect SIMPL Windows process PID for dialog monitoring
-	slog.Debug("Getting SIMPL Windows process PID")
-	pid := simpl.GetPid()
-	if pid == 0 {
-		slog.Warn("Could not determine PID")
-		slog.Info("Warning: Could not determine SIMPL Windows process PID; dialog detection may be limited")
-	} else {
-		slog.Debug("SIMPL Windows PID detected", "pid", pid)
-		simplPid = pid // Store for signal handler
-	}
-
-	// Check for "Operation Complete" dialog that may appear after loading the file
-	// This dialog must be dismissed before we can send compile keystrokes
-	if pid != 0 && windows.MonitorCh != nil {
-		slog.Info("Checking for 'Operation Complete' dialog...")
-		slog.Debug("Checking for Operation Complete dialog")
-		ev, ok := windows.WaitOnMonitor(3*time.Second,
-			func(e windows.WindowEvent) bool { return strings.EqualFold(e.Title, "Operation Complete") },
-			func(e windows.WindowEvent) bool {
-				return strings.Contains(strings.ToLower(e.Title), "operation complete")
-			},
-		)
-
-		if ok {
-			slog.Debug("Operation Complete dialog detected", "title", ev.Title)
-			slog.Info("Detected dialog: " + ev.Title)
-			slog.Info("Dismissing 'Operation Complete' dialog...")
-			windows.CloseWindow(ev.Hwnd, ev.Title)
-			time.Sleep(500 * time.Millisecond)
-			slog.Debug("Dialog dismissed")
-		} else {
-			slog.Debug("No Operation Complete dialog detected")
-		}
-	}
-
-	// Confirm elevation before sending keystrokes
-	if windows.IsElevated() {
-		slog.Debug("Process is elevated, proceeding with keystroke injection")
-	} else {
-		slog.Warn("Process is NOT elevated, keystroke injection may fail")
-	}
-
-	// Bring window to foreground and send F12 (compile)
-	slog.Debug("Bringing window to foreground...")
-	_ = windows.SetForeground(hwnd)
-
-	slog.Info("Waiting for window to receive focus...")
-	time.Sleep(1 * time.Second)
-
-	// Use keybd_event (older API that works with SIMPL Windows)
-	slog.Debug("Preparing to send keystroke")
-	var keystrokeSent bool
-	if recompileAll {
-		slog.Info("Sending Alt+F12 keystroke to trigger Recompile All...")
-		slog.Debug("Sending Alt+F12 keystroke")
-		keystrokeSent = windows.SendAltF12()
-		if keystrokeSent {
-			slog.Info("Successfully sent Alt+F12 keystroke")
-			slog.Debug("Alt+F12 sent successfully")
-		} else {
-			slog.Error("Failed to send Alt+F12")
-		}
-	} else {
-		slog.Info("Sending F12 keystroke to trigger compile...")
-		slog.Debug("Sending F12 keystroke")
-		keystrokeSent = windows.SendF12()
-		if keystrokeSent {
-			slog.Info("Successfully sent F12 keystroke")
-			slog.Debug("F12 sent successfully")
-		} else {
-			slog.Error("Failed to send F12")
-		}
-	}
-
-	if keystrokeSent {
-		slog.Debug("Starting compile monitoring")
-		// Detect "Incomplete Symbols" error dialog - this is a fatal error
-		if pid != 0 && windows.MonitorCh != nil {
-			slog.Info("Checking for 'Incomplete Symbols' error dialog...")
-			ev, ok := windows.WaitOnMonitor(2*time.Second,
-				func(e windows.WindowEvent) bool { return strings.EqualFold(e.Title, "Incomplete Symbols") },
-				func(e windows.WindowEvent) bool { return strings.Contains(strings.ToLower(e.Title), "incomplete") },
-			)
-
-			if ok {
-				slog.Error("ERROR: Incomplete Symbols detected", "title", ev.Title)
-				slog.Info("The program contains incomplete symbols and cannot be compiled.")
-				slog.Info("Please fix the incomplete symbols in SIMPL Windows before attempting to compile.")
-
-				// Extract error details from the dialog
-				childInfos := windows.CollectChildInfos(ev.Hwnd)
-				for _, ci := range childInfos {
-					if ci.ClassName == "Edit" && len(ci.Text) > 50 {
-						slog.Info("Details", "text", ci.Text)
-						break
-					}
-				}
-
-				return fmt.Errorf("program contains incomplete symbols and cannot be compiled")
-			}
-		}
-
-		// Detect save prompt ("Convert/Compile") via monitor channel and auto-confirm "Yes"
-		if pid != 0 && windows.MonitorCh != nil {
-			slog.Info("Watching for 'Convert/Compile' save prompt...")
-			ev, ok := windows.WaitOnMonitor(5*time.Second,
-				func(e windows.WindowEvent) bool { return strings.EqualFold(e.Title, "Convert/Compile") },
-				func(e windows.WindowEvent) bool { return strings.Contains(strings.ToLower(e.Title), "convert/compile") },
-			)
-
-			if ok {
-				slog.Info("Detected save prompt", "title", ev.Title)
-				_ = windows.SetForeground(ev.Hwnd)
-				time.Sleep(300 * time.Millisecond)
-				_ = windows.SendEnter()
-				slog.Info("Auto-confirmed save prompt with 'Yes'")
-			} else {
-				slog.Debug("Save prompt not detected within timeout")
-			}
-		}
-
-		// Detect "Commented out Symbols and/or Devices" dialog and auto-confirm "Yes"
-		if pid != 0 && windows.MonitorCh != nil {
-			slog.Info("Watching for 'Commented out Symbols' dialog...")
-			ev, ok := windows.WaitOnMonitor(5*time.Second,
-				func(e windows.WindowEvent) bool {
-					return strings.EqualFold(e.Title, "Commented out Symbols and/or Devices")
-				},
-				func(e windows.WindowEvent) bool { return strings.Contains(strings.ToLower(e.Title), "commented out") },
-			)
-
-			if ok {
-				slog.Info("Detected dialog", "title", ev.Title)
-				_ = windows.SetForeground(ev.Hwnd)
-				time.Sleep(300 * time.Millisecond)
-				_ = windows.SendEnter()
-				slog.Info("Auto-confirmed 'Commented out Symbols' dialog with 'Yes'")
-			} else {
-				slog.Debug("'Commented out Symbols' dialog not detected within timeout")
-			}
-		}
-
-		// Detect compile progress start ("Compiling...") via monitor channel
-		if pid != 0 && windows.MonitorCh != nil {
-			slog.Info("Waiting for 'Compiling...' dialog...")
-			ev, ok := windows.WaitOnMonitor(30*time.Second,
-				func(e windows.WindowEvent) bool { return strings.EqualFold(e.Title, "Compiling...") },
-				func(e windows.WindowEvent) bool { return strings.Contains(strings.ToLower(e.Title), "compiling") },
-			)
-
-			if ok {
-				slog.Info("Compile started", "title", ev.Title)
-			} else {
-				slog.Warn("Did not detect 'Compiling...' dialog within timeout")
-			}
-		}
-
-		// Variables to store compile results
-		var warnings, notices, errors int
-		var compileTime float64
-		warningMessages := []string{}
-		noticeMessages := []string{}
-		errorMessages := []string{}
-		hasErrors := false
-		var compileCompleteHwnd uintptr
-
-		// Detect and parse Compile Complete dialog
-		if pid != 0 && windows.MonitorCh != nil {
-			slog.Info("Waiting for 'Compile Complete' dialog...")
-			ev, ok := windows.WaitOnMonitor(5*time.Minute, // Increased timeout for large programs
-				func(e windows.WindowEvent) bool { return strings.EqualFold(e.Title, "Compile Complete") },
-				func(e windows.WindowEvent) bool {
-					return strings.Contains(strings.ToLower(e.Title), "compile complete")
-				},
-			)
-
-			if ok {
-				slog.Info("Detected", "title", ev.Title)
-				compileCompleteHwnd = ev.Hwnd // Store for later closing
-				childInfos := windows.CollectChildInfos(ev.Hwnd)
-				slog.Debug("Child controls in dialog", "title", ev.Title)
-
-				for _, ci := range childInfos {
-					slog.Debug("Child control", "class", ci.ClassName, "text", ci.Text, "length", len(ci.Text))
-				} // Parse stats from Compile Complete dialog
-				for _, ci := range childInfos {
-					text := strings.ReplaceAll(ci.Text, "\r\n", "\n")
-					lines := strings.SplitSeq(text, "\n")
-					for t := range lines {
-						t = strings.TrimSpace(t)
-						if t == "" {
-							continue
-						}
-						if n, ok := compiler.ParseStatLine(t, "Program Warnings"); ok {
-							warnings = n
-						}
-						if n, ok := compiler.ParseStatLine(t, "Program Notices"); ok {
-							notices = n
-						}
-						if n, ok := compiler.ParseStatLine(t, "Program Errors"); ok {
-							errors = n
-							if n > 0 {
-								hasErrors = true
-							}
-						}
-						if secs, ok := compiler.ParseCompileTimeLine(t); ok {
-							compileTime = secs
-						}
-					}
-				}
-			} else {
-				return fmt.Errorf("compilation timeout: did not detect 'Compile Complete' dialog within 5 minutes")
-			}
-		}
-
-		// Detect and parse Program Compilation dialog (if warnings/notices/errors exist)
-		if pid != 0 && windows.MonitorCh != nil && (warnings > 0 || notices > 0 || errors > 0) {
-			slog.Info("Waiting for 'Program Compilation' dialog...")
-			ev, ok := windows.WaitOnMonitor(10*time.Second,
-				func(e windows.WindowEvent) bool { return strings.EqualFold(e.Title, "Program Compilation") },
-				func(e windows.WindowEvent) bool {
-					return strings.Contains(strings.ToLower(e.Title), "program compilation")
-				},
-			)
-
-			if ok {
-				slog.Info("Detected", "title", ev.Title)
-				childInfos := windows.CollectChildInfos(ev.Hwnd)
-				slog.Debug("Child controls in dialog", "title", ev.Title)
-
-				for _, ci := range childInfos {
-					slog.Debug("Child control", "class", ci.ClassName, "text", ci.Text, "length", len(ci.Text))
-				}
-
-				// Extract messages from ListBox and categorize them
-				for _, ci := range childInfos {
-					if ci.ClassName == "ListBox" && len(ci.Items) > 0 {
-						// Use items directly instead of splitting text
-						for _, line := range ci.Items {
-							line = strings.TrimSpace(line)
-							if line == "" {
-								continue
-							}
-							// Categorize based on prefix
-							lineUpper := strings.ToUpper(line)
-							if strings.HasPrefix(lineUpper, "ERROR") {
-								errorMessages = append(errorMessages, line)
-								hasErrors = true
-							} else if strings.HasPrefix(lineUpper, "WARNING") {
-								warningMessages = append(warningMessages, line)
-							} else if strings.HasPrefix(lineUpper, "NOTICE") {
-								noticeMessages = append(noticeMessages, line)
-							} else {
-								// If it doesn't have a prefix, it's likely a continuation of the previous message
-								// Append to the last message in the appropriate list
-								if len(errorMessages) > 0 {
-									errorMessages[len(errorMessages)-1] += " " + line
-								} else if len(warningMessages) > 0 {
-									warningMessages[len(warningMessages)-1] += " " + line
-								} else if len(noticeMessages) > 0 {
-									noticeMessages[len(noticeMessages)-1] += " " + line
-								}
-							}
-						}
-					}
-				}
-
-				if len(errorMessages) > 0 {
-					slog.Info("Error messages:")
-					for i, msg := range errorMessages {
-						slog.Info("", "number", i+1, "message", msg)
-					}
-				}
-
-				if len(warningMessages) > 0 {
-					slog.Info("Warning messages:")
-					for i, msg := range warningMessages {
-						slog.Info("", "number", i+1, "message", msg)
-					}
-				}
-
-				if len(noticeMessages) > 0 {
-					slog.Info("Notice messages:")
-					for i, msg := range noticeMessages {
-						slog.Info("", "number", i+1, "message", msg)
-					}
-				}
-			} else {
-				slog.Debug("Program Compilation dialog not detected (may not have appeared)")
-			}
-		}
-
-		// Close SIMPL Windows after successful compilation
-		slog.Info("Closing dialogs and SIMPL Windows...")
-
-		// First, close the "Compile Complete" dialog if it's still open
-		if compileCompleteHwnd != 0 {
-			windows.CloseWindow(compileCompleteHwnd, "Compile Complete dialog")
-			time.Sleep(500 * time.Millisecond)
-		}
-
-		// Check for and handle "Confirmation" dialog that may appear when closing
-		if pid != 0 && windows.MonitorCh != nil {
-			ev, ok := windows.WaitOnMonitor(2*time.Second,
-				func(e windows.WindowEvent) bool { return strings.EqualFold(e.Title, "Confirmation") },
-				func(e windows.WindowEvent) bool { return strings.Contains(strings.ToLower(e.Title), "confirmation") },
-			)
-
-			if ok {
-				slog.Info("Detected dialog (clicking 'No' to close without saving)", "title", ev.Title)
-				// Find and click the "No" button directly
-				if windows.FindAndClickButton(ev.Hwnd, "&No") {
-					slog.Debug("Successfully clicked 'No' button")
-					time.Sleep(500 * time.Millisecond)
-				} else {
-					slog.Warn("Could not find 'No' button, trying to close dialog")
-					windows.CloseWindow(ev.Hwnd, "Confirmation dialog")
-					time.Sleep(500 * time.Millisecond)
-				}
-			}
-		}
-
-		// Now close the main SIMPL Windows application (defer will also do this, but we do it here for clean output)
-		if hwnd != 0 {
-			windows.CloseWindow(hwnd, "SIMPL Windows")
-			time.Sleep(1 * time.Second)
-			slog.Info("SIMPL Windows closed successfully")
-		}
-
-		// Print final summary
-		if pid != 0 && windows.MonitorCh != nil {
-			slog.Info("=== Compile Summary ===")
-			if errors > 0 {
-				slog.Info("Errors", "count", errors)
-			}
-			slog.Info("Warnings", "count", warnings)
-			slog.Info("Notices", "count", notices)
-			slog.Info("Compile Time", "seconds", compileTime)
-			slog.Info("=======================")
-		}
-
+	// Run the compilation
+	result, err := compiler.Compile(compiler.CompileOptions{
+		FilePath:     absPath,
+		RecompileAll: recompileAll,
+		Hwnd:         hwnd,
+		Ctx:          ctx,
+		SimplPidPtr:  &simplPid,
+	})
+	if err != nil {
+		slog.Error("Compilation failed", "error", err)
 		slog.Info("Press Enter to exit...")
 		fmt.Scanln()
-
-		// Exit with error code if compilation failed
-		if hasErrors {
-			slog.Error("Compilation failed", "errors", errors)
-			return fmt.Errorf("compilation failed with %d error(s)", errors)
-		}
-
-		slog.Debug("Compilation completed successfully")
+		return err
 	}
+
+	// Show compilation summary
+	slog.Info("=== Compile Summary ===")
+	if result.Errors > 0 {
+		slog.Info("Errors", "count", result.Errors)
+	}
+	slog.Info("Warnings", "count", result.Warnings)
+	slog.Info("Notices", "count", result.Notices)
+	slog.Info("Compile Time", "seconds", result.CompileTime)
+	slog.Info("=======================")
+
+	// Exit with error if compilation failed
+	if result.HasErrors {
+		slog.Error("Compilation failed with errors")
+		slog.Info("Press Enter to exit...")
+		fmt.Scanln()
+		return fmt.Errorf("compilation failed with %d error(s)", result.Errors)
+	}
+
+	slog.Debug("Compilation completed successfully")
+	slog.Info("Press Enter to exit...")
+	fmt.Scanln()
 
 	slog.Debug("Execute() completed successfully")
 	return nil
