@@ -322,3 +322,47 @@ func HandleConfirmationDialog(pid uint32) error {
 
 	return nil
 }
+
+// init initializes global dialog handler using real implementations (for backward compatibility)
+func init() {
+	_ = NewDialogHandler(
+		windows.NewRealWindowManager(),
+		windows.NewRealKeyboardInjector(),
+		windows.NewRealControlReader(),
+	)
+}
+
+// Backward-compatible wrapper functions that delegate to DialogHandler
+// These maintain the existing API while using the new dependency injection internally
+
+func HandleOperationCompleteDialogWithHandler(pid uint32, handler *DialogHandler) error {
+	return handler.HandleOperationComplete(pid)
+}
+
+func HandleIncompleteSymbolsDialogWithHandler(pid uint32, handler *DialogHandler) error {
+	return handler.HandleIncompleteSymbols(pid)
+}
+
+func HandleConvertCompileDialogWithHandler(pid uint32, handler *DialogHandler) error {
+	return handler.HandleConvertCompile(pid)
+}
+
+func HandleCommentedOutSymbolsDialogWithHandler(pid uint32, handler *DialogHandler) error {
+	return handler.HandleCommentedOutSymbols(pid)
+}
+
+func WaitForCompilingDialogWithHandler(pid uint32, handler *DialogHandler) error {
+	return handler.WaitForCompiling(pid)
+}
+
+func ParseCompileCompleteDialogWithHandler(pid uint32, handler *DialogHandler) (uintptr, int, int, int, float64, error) {
+	return handler.ParseCompileComplete(pid)
+}
+
+func ParseProgramCompilationDialogWithHandler(pid uint32, handler *DialogHandler) ([]string, []string, []string, error) {
+	return handler.ParseProgramCompilation(pid)
+}
+
+func HandleConfirmationDialogWithHandler(pid uint32, handler *DialogHandler) error {
+	return handler.HandleConfirmation(pid)
+}

@@ -10,7 +10,7 @@ import (
 
 func CloseWindow(hwnd uintptr, title string) {
 	slog.Info("Closing window", "title", title)
-	procPostMessageW.Call(hwnd, WM_CLOSE, 0, 0)
+	_, _, _ = procPostMessageW.Call(hwnd, WM_CLOSE, 0, 0)
 	time.Sleep(500 * time.Millisecond)
 }
 
@@ -88,13 +88,13 @@ func ShellExecute(hwnd uintptr, verb, file, args, cwd string, showCmd int) error
 
 func GetWindowText(hwnd uintptr) string {
 	buf := make([]uint16, 256)
-	procGetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	_, _, _ = procGetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
 	return syscall.UTF16ToString(buf)
 }
 
 func GetClassName(hwnd uintptr) string {
 	buf := make([]uint16, 256)
-	procGetClassNameW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	_, _, _ = procGetClassNameW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
 	return syscall.UTF16ToString(buf)
 }
 
@@ -103,9 +103,9 @@ func IsWindowVisible(hwnd uintptr) bool {
 	return ret != 0
 }
 
-func GetWindowProcessId(hwnd uintptr) uint32 {
+func GetWindowPid(hwnd uintptr) uint32 {
 	var pid uint32
-	procGetWindowThreadProcessId.Call(hwnd, uintptr(unsafe.Pointer(&pid)))
+	_, _, _ = procGetWindowThreadProcessId.Call(hwnd, uintptr(unsafe.Pointer(&pid)))
 	return pid
 }
 
@@ -123,7 +123,7 @@ func TerminateProcess(pid uint32) error {
 	if hProcess == 0 {
 		return fmt.Errorf("failed to open process: %v", err)
 	}
-	defer ProcCloseHandle.Call(hProcess)
+	defer func() { _, _, _ = ProcCloseHandle.Call(hProcess) }()
 
 	// Terminate the process
 	ret, _, err := procTerminateProcess.Call(hProcess, uintptr(1))

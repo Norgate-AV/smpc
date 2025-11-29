@@ -22,7 +22,7 @@ func IsElevated() bool {
 		return false
 	}
 
-	defer ProcCloseHandle.Call(token)
+	defer func() { _, _, _ = ProcCloseHandle.Call(token) }()
 
 	var elevation TOKEN_ELEVATION
 	var returnLength uint32

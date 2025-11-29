@@ -14,6 +14,8 @@ func main() {
 	// Initialize logging system with file rotation and dual output
 	if err := logging.Setup(false); err != nil { // Set to true for verbose mode
 		fmt.Fprintf(os.Stderr, "Failed to setup logging: %v\n", err)
+		fmt.Fprintln(os.Stderr, "Press Enter to exit...")
+		_, _ = fmt.Scanln()
 		os.Exit(1)
 	}
 
@@ -26,17 +28,16 @@ func main() {
 			fmt.Fprintf(os.Stderr, "\n*** PANIC: %v ***\n", r)
 			fmt.Fprintf(os.Stderr, "Check log file for details\n")
 			fmt.Println("\nPress Enter to close...")
-			fmt.Scanln()
+			_, _ = fmt.Scanln()
 			os.Exit(2)
 		}
 	}()
 
 	slog.Debug("Executing RootCmd...")
 	if err := cmd.RootCmd.Execute(); err != nil {
-		slog.Error("RootCmd.Execute failed", "error", err)
 		fmt.Fprintln(os.Stderr, err)
-		fmt.Println("\nPress Enter to close...")
-		fmt.Scanln()
+		fmt.Fprintln(os.Stderr, "Press Enter to exit...")
+		_, _ = fmt.Scanln()
 		os.Exit(1)
 	}
 

@@ -10,9 +10,7 @@ import (
 // collectChildInfos returns a slice of childInfo for all child controls of hwnd
 func CollectChildInfos(hwnd uintptr) []ChildInfo {
 	infos := []ChildInfo{}
-	var cb func(hwnd uintptr, lparam uintptr) uintptr
-
-	cb = func(chWnd uintptr, lparam uintptr) uintptr {
+	cb := func(chWnd uintptr, lparam uintptr) uintptr {
 		c := GetClassName(chWnd)
 
 		var t string
@@ -34,7 +32,7 @@ func CollectChildInfos(hwnd uintptr) []ChildInfo {
 		return 1
 	}
 
-	procEnumChildWindows.Call(hwnd, syscall.NewCallback(cb), 0)
+	_, _, _ = procEnumChildWindows.Call(hwnd, syscall.NewCallback(cb), 0)
 	return infos
 }
 
@@ -59,9 +57,9 @@ func GetListBoxItems(hwnd uintptr) []string {
 		}
 
 		// Allocate buffer and get the text
-		buf := make([]uint16, itemLen+1)
-		procSendMessageW.Call(hwnd, LB_GETTEXT, uintptr(i), uintptr(unsafe.Pointer(&buf[0])))
-		text := syscall.UTF16ToString(buf)
+		var buf [256]uint16
+		_, _, _ = procSendMessageW.Call(hwnd, LB_GETTEXT, uintptr(i), uintptr(unsafe.Pointer(&buf[0])))
+		text := syscall.UTF16ToString(buf[:])
 		slog.Debug("getListBoxItems item", "index", i, "text", text)
 		items = append(items, text)
 	}
@@ -96,7 +94,7 @@ func FindAndClickButton(parentHwnd uintptr, buttonText string) bool {
 			slog.Debug("Found button, sending click", "text", buttonText, "hwnd", ci.Hwnd)
 			// Send BN_CLICKED notification to parent
 			// WM_COMMAND: wParam = MAKEWPARAM(controlID, BN_CLICKED), lParam = hwnd
-			procSendMessageW.Call(parentHwnd, WM_COMMAND, uintptr(BN_CLICKED), ci.Hwnd)
+			_, _, _ = procSendMessageW.Call(parentHwnd, WM_COMMAND, uintptr(BN_CLICKED), ci.Hwnd)
 			return true
 		}
 	}
@@ -109,9 +107,7 @@ func CollectChildTexts(hwnd uintptr) []string {
 	texts := []string{}
 
 	// inner callback captures texts
-	var cb func(hwnd uintptr, lparam uintptr) uintptr
-
-	cb = func(chWnd uintptr, lparam uintptr) uintptr {
+	cb := func(chWnd uintptr, lparam uintptr) uintptr {
 		t := GetWindowText(chWnd)
 		if t != "" {
 			texts = append(texts, t)
@@ -121,6 +117,6 @@ func CollectChildTexts(hwnd uintptr) []string {
 		return 1
 	}
 
-	procEnumChildWindows.Call(hwnd, syscall.NewCallback(cb), 0)
+	_, _, _ = procEnumChildWindows.Call(hwnd, syscall.NewCallback(cb), 0)
 	return texts
 }

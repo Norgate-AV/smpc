@@ -63,7 +63,7 @@ func WaitOnMonitor(timeout time.Duration, matchers ...func(WindowEvent) bool) (W
 func enumWindowsCallback(hwnd uintptr, lparam uintptr) uintptr {
 	if IsWindowVisible(hwnd) {
 		title := GetWindowText(hwnd)
-		pid := GetWindowProcessId(hwnd)
+		pid := GetWindowPid(hwnd)
 
 		// Include even if title is empty; we may match by child text later
 		foundWindows = append(foundWindows, WindowInfo{Hwnd: hwnd, Title: title, Pid: pid})
@@ -79,7 +79,7 @@ func EnumerateWindows() []WindowInfo {
 
 	foundWindows = nil
 	callback := syscall.NewCallback(enumWindowsCallback)
-	procEnumWindows.Call(callback, 0)
+	_, _, _ = procEnumWindows.Call(callback, 0)
 
 	// Make a copy to avoid races with subsequent enumerations
 	windows := make([]WindowInfo, len(foundWindows))

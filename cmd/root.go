@@ -11,12 +11,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/Norgate-AV/smpc/internal/compiler"
 	"github.com/Norgate-AV/smpc/internal/logging"
 	"github.com/Norgate-AV/smpc/internal/simpl"
 	"github.com/Norgate-AV/smpc/internal/version"
 	"github.com/Norgate-AV/smpc/internal/windows"
-	"github.com/spf13/cobra"
 )
 
 var (
@@ -26,6 +27,8 @@ var (
 	// Track SIMPL Windows for cleanup on interrupt
 	simplHwnd uintptr
 	simplPid  uint32
+	// osExit allows mocking os.Exit for testing
+	osExit = os.Exit
 )
 
 var RootCmd = &cobra.Command{
@@ -53,26 +56,26 @@ func validateArgs(cmd *cobra.Command, args []string) error {
 		logPath := logging.GetLogPath()
 		if logPath == "" {
 			fmt.Fprintln(os.Stderr, "ERROR: Log file path not initialized")
-			os.Exit(1)
+			osExit(1)
 		}
 
 		file, err := os.Open(logPath)
 		if err != nil {
 			if os.IsNotExist(err) {
 				fmt.Fprintf(os.Stderr, "Log file does not exist: %s\n", logPath)
-				os.Exit(1)
+				osExit(1)
 			}
 			fmt.Fprintf(os.Stderr, "ERROR: Failed to open log file: %v\n", err)
-			os.Exit(1)
+			osExit(1)
 		}
 		defer file.Close()
 
 		if _, err := io.Copy(os.Stdout, file); err != nil {
 			fmt.Fprintf(os.Stderr, "ERROR: Failed to read log file: %v\n", err)
-			os.Exit(1)
+			osExit(1)
 		}
 
-		os.Exit(0)
+		osExit(0)
 		return nil
 	}
 
@@ -158,7 +161,7 @@ func Execute(cmd *cobra.Command, args []string) error {
 
 	// Set up Windows console control handler to catch window close events
 	// This is more reliable than signal handling on Windows
-	windows.SetConsoleCtrlHandler(func(ctrlType uint32) uintptr {
+	_ = windows.SetConsoleCtrlHandler(func(ctrlType uint32) uintptr {
 		slog.Debug("Received console control event", "type", windows.GetCtrlTypeName(ctrlType), "code", ctrlType)
 		slog.Info("Received console control event, cleaning up", "type", windows.GetCtrlTypeName(ctrlType))
 
@@ -169,14 +172,14 @@ func Execute(cmd *cobra.Command, args []string) error {
 		} else if simplPid != 0 {
 			// If we don't have hwnd yet but have PID, force terminate
 			slog.Debug("Force terminating SIMPL Windows", "pid", simplPid)
-			windows.TerminateProcess(simplPid)
+			_ = windows.TerminateProcess(simplPid)
 		} else {
 			// Last resort - try to find and kill any smpwin.exe process we may have started
 			slog.Debug("Attempting to find and terminate SIMPL Windows process")
 			pid := simpl.GetPid()
 			if pid != 0 {
 				slog.Debug("Found SIMPL Windows PID, terminating", "pid", pid)
-				windows.TerminateProcess(pid)
+				_ = windows.TerminateProcess(pid)
 			} else {
 				slog.Debug("Could not find SIMPL Windows process to terminate")
 			}
@@ -209,14 +212,14 @@ func Execute(cmd *cobra.Command, args []string) error {
 		} else if simplPid != 0 {
 			// If we don't have hwnd yet but have PID, force terminate
 			slog.Debug("Force terminating SIMPL Windows", "pid", simplPid)
-			windows.TerminateProcess(simplPid)
+			_ = windows.TerminateProcess(simplPid)
 		} else {
 			// Last resort - try to find and kill any smpwin.exe process we may have started
 			slog.Debug("Attempting to find and terminate SIMPL Windows process")
 			pid := simpl.GetPid()
 			if pid != 0 {
 				slog.Debug("Found SIMPL Windows PID, terminating", "pid", pid)
-				windows.TerminateProcess(pid)
+				_ = windows.TerminateProcess(pid)
 			}
 		}
 
@@ -268,7 +271,7 @@ func Execute(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		slog.Error("Compilation failed", "error", err)
 		slog.Info("Press Enter to exit...")
-		fmt.Scanln()
+		_, _ = fmt.Scanln()
 		return err
 	}
 
@@ -286,13 +289,13 @@ func Execute(cmd *cobra.Command, args []string) error {
 	if result.HasErrors {
 		slog.Error("Compilation failed with errors")
 		slog.Info("Press Enter to exit...")
-		fmt.Scanln()
+		_, _ = fmt.Scanln()
 		return fmt.Errorf("compilation failed with %d error(s)", result.Errors)
 	}
 
 	slog.Debug("Compilation completed successfully")
 	slog.Info("Press Enter to exit...")
-	fmt.Scanln()
+	_, _ = fmt.Scanln()
 
 	slog.Debug("Execute() completed successfully")
 	return nil

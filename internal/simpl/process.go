@@ -19,7 +19,7 @@ func FindWindow(processName string, debug bool) (uintptr, string) {
 		return 0, ""
 	}
 
-	defer windows.ProcCloseHandle.Call(snapshot)
+	defer func() { _, _, _ = windows.ProcCloseHandle.Call(snapshot) }()
 
 	var pe windows.PROCESSENTRY32
 	pe.DwSize = uint32(unsafe.Sizeof(pe))
@@ -125,7 +125,7 @@ func GetPid() uint32 {
 		return 0
 	}
 
-	defer windows.ProcCloseHandle.Call(snapshot)
+	defer func() { _, _, _ = windows.ProcCloseHandle.Call(snapshot) }()
 
 	var pe windows.PROCESSENTRY32
 	pe.DwSize = uint32(unsafe.Sizeof(pe))
@@ -256,7 +256,7 @@ func Cleanup(hwnd uintptr) {
 		pid := GetPid()
 		if pid != 0 {
 			slog.Debug("Attempting to force terminate process", "pid", pid)
-			windows.TerminateProcess(pid)
+			_ = windows.TerminateProcess(pid)
 		}
 	}
 }
