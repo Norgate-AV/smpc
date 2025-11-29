@@ -6,7 +6,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"syscall"
@@ -68,13 +67,9 @@ func validateArgs(cmd *cobra.Command, args []string) error {
 		}
 		defer file.Close()
 
-		// Try to use a pager for better readability
-		if err := displayWithPager(file); err != nil {
-			// Fallback to direct output if pager fails
-			if _, err := io.Copy(os.Stdout, file); err != nil {
-				fmt.Fprintf(os.Stderr, "ERROR: Failed to read log file: %v\n", err)
-				os.Exit(1)
-			}
+		if _, err := io.Copy(os.Stdout, file); err != nil {
+			fmt.Fprintf(os.Stderr, "ERROR: Failed to read log file: %v\n", err)
+			os.Exit(1)
 		}
 
 		os.Exit(0)
@@ -91,36 +86,6 @@ func validateArgs(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
-}
-
-// displayWithPager attempts to display content using the system's pager
-func displayWithPager(reader io.Reader) error {
-	// Determine the pager to use
-	pager := os.Getenv("PAGER")
-	if pager == "" {
-		// Try common pagers in order of preference
-		pagers := []string{"less", "more"}
-		for _, p := range pagers {
-			if _, err := exec.LookPath(p); err == nil {
-				pager = p
-				break
-			}
-		}
-	}
-
-	// If no pager found, return error to fall back to direct output
-	if pager == "" {
-		return fmt.Errorf("no pager found")
-	}
-
-	// Create the pager command
-	pagerCmd := exec.Command(pager)
-	pagerCmd.Stdin = reader
-	pagerCmd.Stdout = os.Stdout
-	pagerCmd.Stderr = os.Stderr
-
-	// Run the pager
-	return pagerCmd.Run()
 }
 
 func Execute(cmd *cobra.Command, args []string) error {
