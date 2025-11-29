@@ -27,6 +27,7 @@ func FindWindow(processName string, debug bool) (uintptr, string) {
 	ret, _, _ := windows.ProcProcess32First.Call(snapshot, uintptr(unsafe.Pointer(&pe)))
 	if ret != 0 {
 		processName = strings.ToLower(processName)
+		
 		for {
 			exeName := syscall.UTF16ToString(pe.SzExeFile[:])
 			if strings.ToLower(exeName) == processName {

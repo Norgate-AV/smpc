@@ -180,20 +180,25 @@ func ParseCompileCompleteDialog(pid uint32) (uintptr, int, int, int, float64, er
 	for _, ci := range childInfos {
 		text := strings.ReplaceAll(ci.Text, "\r\n", "\n")
 		lines := strings.SplitSeq(text, "\n")
+
 		for t := range lines {
 			t = strings.TrimSpace(t)
 			if t == "" {
 				continue
 			}
+
 			if n, ok := ParseStatLine(t, "Program Warnings"); ok {
 				warnings = n
 			}
+
 			if n, ok := ParseStatLine(t, "Program Notices"); ok {
 				notices = n
 			}
+
 			if n, ok := ParseStatLine(t, "Program Errors"); ok {
 				errors = n
 			}
+
 			if secs, ok := ParseCompileTimeLine(t); ok {
 				compileTime = secs
 			}
@@ -241,6 +246,7 @@ func ParseProgramCompilationDialog(pid uint32, warnings, notices, errors int) ([
 
 	// Extract messages from ListBox and categorize them
 	for _, ci := range childInfos {
+		// TODO: Never nest
 		if ci.ClassName == "ListBox" && len(ci.Items) > 0 {
 			// Use items directly instead of splitting text
 			for _, line := range ci.Items {
@@ -248,6 +254,7 @@ func ParseProgramCompilationDialog(pid uint32, warnings, notices, errors int) ([
 				if line == "" {
 					continue
 				}
+
 				// Categorize based on prefix
 				lineUpper := strings.ToUpper(line)
 				if strings.HasPrefix(lineUpper, "ERROR") {

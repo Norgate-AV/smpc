@@ -14,6 +14,7 @@ func ParseStatLine(line, prefix string) (int, bool) {
 	re := regexp.MustCompile(pattern)
 	matches := re.FindStringSubmatch(line)
 
+	// TODO: Never nest
 	if len(matches) == 2 {
 		slog.Debug("parseStatLine match found", "value", matches[1])
 
@@ -40,6 +41,7 @@ func ParseCompileTimeLine(line string) (float64, bool) {
 	re := regexp.MustCompile(pattern)
 	matches := re.FindStringSubmatch(line)
 
+	// TODO: Never nest
 	if len(matches) >= 2 {
 		slog.Debug("parseCompileTimeLine match found", "value", matches[1])
 

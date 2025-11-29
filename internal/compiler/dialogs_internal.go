@@ -179,20 +179,25 @@ func (dh *DialogHandler) ParseCompileComplete(pid uint32) (hwnd uintptr, warning
 	for _, ci := range childInfos {
 		text := strings.ReplaceAll(ci.Text, "\r\n", "\n")
 		lines := strings.Split(text, "\n")
+
 		for _, line := range lines {
 			line = strings.TrimSpace(line)
 			if line == "" {
 				continue
 			}
+
 			if n, ok := ParseStatLine(line, "Program Warnings"); ok {
 				warnings = n
 			}
+
 			if n, ok := ParseStatLine(line, "Program Notices"); ok {
 				notices = n
 			}
+
 			if n, ok := ParseStatLine(line, "Program Errors"); ok {
 				errors = n
 			}
+
 			if secs, ok := ParseCompileTimeLine(line); ok {
 				compileTime = secs
 			}
@@ -225,6 +230,7 @@ func (dh *DialogHandler) ParseProgramCompilation(pid uint32) (warnings, notices,
 
 	// Extract messages from ListBox
 	for _, ci := range childInfos {
+		// TODO: Never nest
 		if ci.ClassName == "ListBox" && len(ci.Items) > 0 {
 			for _, line := range ci.Items {
 				line = strings.TrimSpace(line)

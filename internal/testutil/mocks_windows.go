@@ -58,6 +58,7 @@ func (m *MockWindowManager) CollectChildInfos(hwnd uintptr) []windows.ChildInfo 
 	if infos, ok := m.ChildInfosMap[hwnd]; ok {
 		return infos
 	}
+
 	// Fall back to default ChildInfos
 	return m.ChildInfos
 }
@@ -66,6 +67,7 @@ func (m *MockWindowManager) WaitOnMonitor(timeout time.Duration, matchers ...fun
 	if m.currentWaitIndex >= len(m.WaitOnMonitorResults) {
 		return windows.WindowEvent{}, false
 	}
+
 	result := m.WaitOnMonitorResults[m.currentWaitIndex]
 	m.currentWaitIndex++
 	return result.Event, result.OK
@@ -77,6 +79,7 @@ func (m *MockWindowManager) WithWaitResult(title string, hwnd uintptr, ok bool) 
 		Event: windows.WindowEvent{Title: title, Hwnd: hwnd},
 		OK:    ok,
 	})
+
 	return m
 }
 
@@ -85,6 +88,7 @@ func (m *MockWindowManager) WithChildInfo(className, text string) *MockWindowMan
 		ClassName: className,
 		Text:      text,
 	})
+
 	return m
 }
 
@@ -93,6 +97,7 @@ func (m *MockWindowManager) WithChildInfoItems(className string, items []string)
 		ClassName: className,
 		Items:     items,
 	})
+
 	return m
 }
 
@@ -205,6 +210,7 @@ func (m *MockControlReader) FindAndClickButton(parentHwnd uintptr, buttonText st
 		ParentHwnd: parentHwnd,
 		ButtonText: buttonText,
 	})
+	
 	return m.FindButtonResult
 }
 

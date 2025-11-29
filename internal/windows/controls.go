@@ -75,6 +75,7 @@ func GetEditText(hwnd uintptr) string {
 	if length == 0 {
 		return ""
 	}
+	
 	// Allocate buffer (add extra space for safety)
 	buf := make([]uint16, length+256)
 	result, _, _ := procSendMessageW.Call(hwnd, WM_GETTEXT, uintptr(len(buf)), uintptr(unsafe.Pointer(&buf[0])))

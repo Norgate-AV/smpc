@@ -71,10 +71,12 @@ func CompileWithDeps(opts CompileOptions, deps *CompileDependencies) (*CompileRe
 	// Send the appropriate keystroke to trigger compilation
 	slog.Debug("Preparing to send keystroke")
 	var keystrokeSent bool
+
 	if opts.RecompileAll {
 		slog.Info("Sending Alt+F12 keystroke to trigger Recompile All...")
 		slog.Debug("Sending Alt+F12 keystroke")
 		keystrokeSent = deps.Keyboard.SendAltF12()
+
 		if keystrokeSent {
 			slog.Info("Successfully sent Alt+F12 keystroke")
 			slog.Debug("Alt+F12 sent successfully")
@@ -85,6 +87,7 @@ func CompileWithDeps(opts CompileOptions, deps *CompileDependencies) (*CompileRe
 		slog.Info("Sending F12 keystroke to trigger compile...")
 		slog.Debug("Sending F12 keystroke")
 		keystrokeSent = deps.Keyboard.SendF12()
+
 		if keystrokeSent {
 			slog.Info("Successfully sent F12 keystroke")
 			slog.Debug("F12 sent successfully")
@@ -153,12 +156,14 @@ func CompileWithDeps(opts CompileOptions, deps *CompileDependencies) (*CompileRe
 				slog.Info("", "number", i+1, "message", msg)
 			}
 		}
+
 		if len(warningMsgs) > 0 {
 			slog.Info("Warning messages:")
 			for i, msg := range warningMsgs {
 				slog.Info("", "number", i+1, "message", msg)
 			}
 		}
+
 		if len(noticeMsgs) > 0 {
 			slog.Info("Notice messages:")
 			for i, msg := range noticeMsgs {
@@ -194,6 +199,7 @@ func CompileWithDeps(opts CompileOptions, deps *CompileDependencies) (*CompileRe
 		if result.Errors > 0 {
 			slog.Info("Errors", "count", result.Errors)
 		}
+
 		slog.Info("Warnings", "count", result.Warnings)
 		slog.Info("Notices", "count", result.Notices)
 		slog.Info("Compile Time", "seconds", result.CompileTime)

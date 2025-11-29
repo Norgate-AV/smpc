@@ -12,6 +12,7 @@ func CreateTempDir(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
+
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	return dir
 }
@@ -22,5 +23,6 @@ func CreateTestSMWFile(t *testing.T, dir string, name string) string {
 	if err := os.WriteFile(path, []byte("test content"), 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
+	
 	return path
 }

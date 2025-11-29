@@ -24,9 +24,11 @@ var (
 	verbose      bool
 	recompileAll bool
 	showLogs     bool
+
 	// Track SIMPL Windows for cleanup on interrupt
 	simplHwnd uintptr
 	simplPid  uint32
+
 	// osExit allows mocking os.Exit for testing
 	osExit = os.Exit
 )
@@ -68,6 +70,7 @@ func validateArgs(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(os.Stderr, "ERROR: Failed to open log file: %v\n", err)
 			osExit(1)
 		}
+
 		defer file.Close()
 
 		if _, err := io.Copy(os.Stdout, file); err != nil {
@@ -144,6 +147,7 @@ func Execute(cmd *cobra.Command, args []string) error {
 		slog.Error("ShellExecute failed", "error", err)
 		return fmt.Errorf("error opening file: %w", err)
 	}
+
 	slog.Debug("SIMPL Windows launched successfully")
 
 	// At this point, the SIMPL Windows process should have started
@@ -177,6 +181,7 @@ func Execute(cmd *cobra.Command, args []string) error {
 			// Last resort - try to find and kill any smpwin.exe process we may have started
 			slog.Debug("Attempting to find and terminate SIMPL Windows process")
 			pid := simpl.GetPid()
+
 			if pid != 0 {
 				slog.Debug("Found SIMPL Windows PID, terminating", "pid", pid)
 				_ = windows.TerminateProcess(pid)
@@ -199,6 +204,7 @@ func Execute(cmd *cobra.Command, args []string) error {
 	// Set up signal handler immediately to catch Ctrl+C during window wait
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
 	go func() {
 		sig := <-sigChan
 		slog.Debug("Received signal", "signal", sig)
@@ -217,6 +223,7 @@ func Execute(cmd *cobra.Command, args []string) error {
 			// Last resort - try to find and kill any smpwin.exe process we may have started
 			slog.Debug("Attempting to find and terminate SIMPL Windows process")
 			pid := simpl.GetPid()
+
 			if pid != 0 {
 				slog.Debug("Found SIMPL Windows PID, terminating", "pid", pid)
 				_ = windows.TerminateProcess(pid)
@@ -226,16 +233,19 @@ func Execute(cmd *cobra.Command, args []string) error {
 		slog.Debug("Cleanup completed, exiting")
 		os.Exit(130) // Standard exit code for Ctrl+C
 	}()
+
 	slog.Debug("Signal handler registered (early)")
 
 	// Wait for the main window to appear (with a 1 minute timeout)
 	slog.Info("Waiting for SIMPL Windows to fully launch...")
 	slog.Debug("Waiting for SIMPL Windows window to appear")
+
 	hwnd, found := simpl.WaitForAppear(60 * time.Second)
 	if !found {
 		slog.Error("Timeout waiting for window to appear")
 		return fmt.Errorf("timed out waiting for SIMPL Windows window to appear")
 	}
+
 	slog.Debug("Window appeared", "hwnd", hwnd)
 
 	// Store hwnd for signal handler cleanup
@@ -252,6 +262,7 @@ func Execute(cmd *cobra.Command, args []string) error {
 		slog.Error("Window not responding properly")
 		return fmt.Errorf("window appeared but is not responding properly")
 	}
+
 	slog.Debug("Window is ready")
 
 	// Small extra delay to allow UI to finish settling

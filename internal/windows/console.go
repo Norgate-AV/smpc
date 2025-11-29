@@ -40,6 +40,7 @@ func consoleCtrlHandlerCallback(ctrlType uint32) uintptr {
 	if globalHandler != nil {
 		return globalHandler(ctrlType)
 	}
+	
 	return 0 // FALSE - let default handler process it
 }
 

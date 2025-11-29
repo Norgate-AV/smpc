@@ -145,6 +145,7 @@ func TestValidateArgs_LogsFlag(t *testing.T) {
 		exitCalled = true
 		assert.Equal(t, 0, code, "Should exit with code 0 for --logs")
 	}
+
 	defer func() { osExit = oldOsExit }()
 
 	cmd := &cobra.Command{}
@@ -283,6 +284,7 @@ func TestRootCmd_Flags(t *testing.T) {
 			cmd := &cobra.Command{
 				Use: "test",
 			}
+			
 			cmd.PersistentFlags().BoolVarP(&verbose, "verbose", "V", false, "enable verbose output")
 			cmd.PersistentFlags().BoolVarP(&recompileAll, "recompile-all", "r", false, "trigger Recompile All")
 			cmd.PersistentFlags().BoolVarP(&showLogs, "logs", "l", false, "print log file")

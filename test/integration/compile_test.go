@@ -221,6 +221,7 @@ func compileFile(t *testing.T, filePath string, recompileAll bool) (*compiler.Co
 		Ctx:          ctx,
 		SimplPidPtr:  &simplPid,
 	}, deps)
+	
 	// Note: We don't require NoError here because some tests expect compilation to fail
 	if err != nil {
 		t.Logf("Compilation returned error: %v", err)
