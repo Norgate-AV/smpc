@@ -12,8 +12,8 @@ type MockProcessManager struct {
 }
 
 type FindWindowCall struct {
-	ProcessName string
-	Debug       bool
+	TargetPid uint32
+	Debug     bool
 }
 
 func NewMockProcessManager() *MockProcessManager {
@@ -30,8 +30,8 @@ func (m *MockProcessManager) GetPid() uint32 {
 	return m.GetPidResult
 }
 
-func (m *MockProcessManager) FindWindow(processName string, debug bool) (uintptr, string) {
-	m.FindWindowCalls = append(m.FindWindowCalls, FindWindowCall{processName, debug})
+func (m *MockProcessManager) FindWindow(targetPid uint32, debug bool) (uintptr, string) {
+	m.FindWindowCalls = append(m.FindWindowCalls, FindWindowCall{targetPid, debug})
 	return m.FindWindowResult, m.FindWindowTitle
 }
 

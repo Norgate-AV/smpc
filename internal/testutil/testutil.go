@@ -23,6 +23,6 @@ func CreateTestSMWFile(t *testing.T, dir string, name string) string {
 	if err := os.WriteFile(path, []byte("test content"), 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
-	
+
 	return path
 }

@@ -8,14 +8,15 @@ import (
 
 // MockWindowManager records all calls for verification
 type MockWindowManager struct {
-	CloseWindowCalls     []CloseWindowCall
-	SetForegroundCalls   []uintptr
-	SetForegroundResult  bool
-	IsElevatedResult     bool
-	ChildInfos           []windows.ChildInfo
-	ChildInfosMap        map[uintptr][]windows.ChildInfo
-	WaitOnMonitorResults []WaitOnMonitorResult
-	currentWaitIndex     int
+	CloseWindowCalls             []CloseWindowCall
+	SetForegroundCalls           []uintptr
+	SetForegroundResult          bool
+	VerifyForegroundWindowResult bool
+	IsElevatedResult             bool
+	ChildInfos                   []windows.ChildInfo
+	ChildInfosMap                map[uintptr][]windows.ChildInfo
+	WaitOnMonitorResults         []WaitOnMonitorResult
+	currentWaitIndex             int
 }
 
 type CloseWindowCall struct {
@@ -30,13 +31,14 @@ type WaitOnMonitorResult struct {
 
 func NewMockWindowManager() *MockWindowManager {
 	return &MockWindowManager{
-		CloseWindowCalls:     []CloseWindowCall{},
-		SetForegroundCalls:   []uintptr{},
-		SetForegroundResult:  true,
-		IsElevatedResult:     true,
-		WaitOnMonitorResults: []WaitOnMonitorResult{},
-		ChildInfos:           []windows.ChildInfo{},
-		ChildInfosMap:        make(map[uintptr][]windows.ChildInfo),
+		CloseWindowCalls:             []CloseWindowCall{},
+		SetForegroundCalls:           []uintptr{},
+		SetForegroundResult:          true,
+		VerifyForegroundWindowResult: true,
+		IsElevatedResult:             true,
+		WaitOnMonitorResults:         []WaitOnMonitorResult{},
+		ChildInfos:                   []windows.ChildInfo{},
+		ChildInfosMap:                make(map[uintptr][]windows.ChildInfo),
 	}
 }
 
@@ -47,6 +49,10 @@ func (m *MockWindowManager) CloseWindow(hwnd uintptr, title string) {
 func (m *MockWindowManager) SetForeground(hwnd uintptr) bool {
 	m.SetForegroundCalls = append(m.SetForegroundCalls, hwnd)
 	return m.SetForegroundResult
+}
+
+func (m *MockWindowManager) VerifyForegroundWindow(expectedHwnd uintptr, expectedPid uint32) bool {
+	return m.VerifyForegroundWindowResult
 }
 
 func (m *MockWindowManager) IsElevated() bool {
@@ -129,50 +135,54 @@ func (m *MockWindowManager) WithChildInfosForHwnd(hwnd uintptr, infos ...windows
 
 // MockKeyboardInjector
 type MockKeyboardInjector struct {
-	SendF12Called    bool
-	SendAltF12Called bool
-	SendEnterCalled  bool
-	SendF12Result    bool
-	SendAltF12Result bool
-	SendEnterResult  bool
+	SendF12Called                 bool
+	SendAltF12Called              bool
+	SendEnterCalled               bool
+	SendF12ToWindowCalled         bool
+	SendAltF12ToWindowCalled      bool
+	SendF12WithSendInputCalled    bool
+	SendAltF12WithSendInputCalled bool
+	SendToWindowResult            bool
+	SendInputResult               bool
 }
 
 func NewMockKeyboardInjector() *MockKeyboardInjector {
 	return &MockKeyboardInjector{
-		SendF12Result:    true,
-		SendAltF12Result: true,
-		SendEnterResult:  true,
+		SendToWindowResult: true, // Default to success
+		SendInputResult:    true, // Default to success
 	}
 }
 
-func (m *MockKeyboardInjector) SendF12() bool {
+func (m *MockKeyboardInjector) SendF12() {
 	m.SendF12Called = true
-	return m.SendF12Result
 }
 
-func (m *MockKeyboardInjector) SendAltF12() bool {
+func (m *MockKeyboardInjector) SendAltF12() {
 	m.SendAltF12Called = true
-	return m.SendAltF12Result
 }
 
-func (m *MockKeyboardInjector) SendEnter() bool {
+func (m *MockKeyboardInjector) SendEnter() {
 	m.SendEnterCalled = true
-	return m.SendEnterResult
 }
 
-func (m *MockKeyboardInjector) WithSendF12Result(result bool) *MockKeyboardInjector {
-	m.SendF12Result = result
-	return m
+func (m *MockKeyboardInjector) SendF12ToWindow(hwnd uintptr) bool {
+	m.SendF12ToWindowCalled = true
+	return m.SendToWindowResult
 }
 
-func (m *MockKeyboardInjector) WithSendAltF12Result(result bool) *MockKeyboardInjector {
-	m.SendAltF12Result = result
-	return m
+func (m *MockKeyboardInjector) SendAltF12ToWindow(hwnd uintptr) bool {
+	m.SendAltF12ToWindowCalled = true
+	return m.SendToWindowResult
 }
 
-func (m *MockKeyboardInjector) WithSendEnterResult(result bool) *MockKeyboardInjector {
-	m.SendEnterResult = result
-	return m
+func (m *MockKeyboardInjector) SendF12WithSendInput() bool {
+	m.SendF12WithSendInputCalled = true
+	return m.SendInputResult
+}
+
+func (m *MockKeyboardInjector) SendAltF12WithSendInput() bool {
+	m.SendAltF12WithSendInputCalled = true
+	return m.SendInputResult
 }
 
 // MockControlReader
@@ -210,7 +220,7 @@ func (m *MockControlReader) FindAndClickButton(parentHwnd uintptr, buttonText st
 		ParentHwnd: parentHwnd,
 		ButtonText: buttonText,
 	})
-	
+
 	return m.FindButtonResult
 }
 

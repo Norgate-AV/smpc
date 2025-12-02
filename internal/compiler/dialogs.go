@@ -6,62 +6,77 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Norgate-AV/smpc/internal/interfaces"
+	"github.com/Norgate-AV/smpc/internal/logger"
 	"github.com/Norgate-AV/smpc/internal/windows"
 )
 
-// HandleOperationCompleteDialog checks for and dismisses the "Operation Complete" dialog
-// that may appear after loading a file
-func HandleOperationCompleteDialog(pid uint32) error {
-	if pid == 0 || windows.MonitorCh == nil {
-		return nil
-	}
+// DialogHandler handles dialog operations with injected dependencies
+type DialogHandler struct {
+	log           logger.LoggerInterface
+	windowMgr     interfaces.WindowManager
+	keyboard      interfaces.KeyboardInjector
+	controlReader interfaces.ControlReader
+}
 
-	slog.Info("Checking for 'Operation Complete' dialog...")
-	slog.Debug("Checking for Operation Complete dialog")
-	ev, ok := windows.WaitOnMonitor(3*time.Second,
-		func(e windows.WindowEvent) bool { return strings.EqualFold(e.Title, "Operation Complete") },
-		func(e windows.WindowEvent) bool {
-			return strings.Contains(strings.ToLower(e.Title), "operation complete")
-		},
-	)
+func NewDialogHandler(log logger.LoggerInterface, windowMgr interfaces.WindowManager, keyboard interfaces.KeyboardInjector, controlReader interfaces.ControlReader) *DialogHandler {
+	return &DialogHandler{
+		log:           log,
+		windowMgr:     windowMgr,
+		keyboard:      keyboard,
+		controlReader: controlReader,
+	}
+}
+
+// NewDialogHandlerWithAPI is a convenience constructor for production use with windows.WindowsAPI
+func NewDialogHandlerWithAPI(log logger.LoggerInterface, api *windows.WindowsAPI) *DialogHandler {
+	return NewDialogHandler(log, api, api, api)
+}
+
+// waitForDialog is a helper function that waits for a dialog by title and logs the result.
+// It returns the dialog event and true if found, or a zero event and false if not found.
+func (dh *DialogHandler) waitForDialog(title string, timeout time.Duration) (windows.WindowEvent, bool) {
+	dh.log.Debug(fmt.Sprintf("Checking for '%s' dialog...", title))
+
+	ev, ok := dh.windowMgr.WaitOnMonitor(timeout, func(e windows.WindowEvent) bool {
+		return strings.EqualFold(e.Title, title)
+	})
 
 	if ok {
-		slog.Debug("Operation Complete dialog detected", "title", ev.Title)
-		slog.Info("Detected dialog: " + ev.Title)
-		slog.Info("Dismissing 'Operation Complete' dialog...")
-		windows.CloseWindow(ev.Hwnd, ev.Title)
-		time.Sleep(500 * time.Millisecond)
-		slog.Debug("Dialog dismissed")
+		dh.log.Debug(fmt.Sprintf("Detected '%s' dialog", ev.Title))
+		dh.log.Debug("Dialog detected",
+			slog.String("title", ev.Title),
+			slog.Uint64("hwnd", uint64(ev.Hwnd)),
+		)
 	} else {
-		slog.Debug("No Operation Complete dialog detected")
+		dh.log.Debug(fmt.Sprintf("'%s' dialog not detected within timeout", title))
+	}
+
+	return ev, ok
+}
+
+func (dh *DialogHandler) HandleOperationComplete() error {
+	ev, ok := dh.waitForDialog("Operation Complete", 3*time.Second)
+	if ok {
+		dh.windowMgr.CloseWindow(ev.Hwnd, ev.Title)
+		time.Sleep(500 * time.Millisecond)
 	}
 
 	return nil
 }
 
-// HandleIncompleteSymbolsDialog checks for the "Incomplete Symbols" error dialog
-// Returns an error if the dialog is detected (this is a fatal error)
-func HandleIncompleteSymbolsDialog(pid uint32) error {
-	if pid == 0 || windows.MonitorCh == nil {
-		return nil
-	}
-
-	slog.Info("Checking for 'Incomplete Symbols' error dialog...")
-	ev, ok := windows.WaitOnMonitor(2*time.Second,
-		func(e windows.WindowEvent) bool { return strings.EqualFold(e.Title, "Incomplete Symbols") },
-		func(e windows.WindowEvent) bool { return strings.Contains(strings.ToLower(e.Title), "incomplete") },
-	)
-
+func (dh *DialogHandler) HandleIncompleteSymbols() error {
+	ev, ok := dh.waitForDialog("Incomplete Symbols", 2*time.Second)
 	if ok {
-		slog.Error("ERROR: Incomplete Symbols detected", "title", ev.Title)
-		slog.Info("The program contains incomplete symbols and cannot be compiled.")
-		slog.Info("Please fix the incomplete symbols in SIMPL Windows before attempting to compile.")
+		dh.log.Error("ERROR: Incomplete Symbols detected", slog.String("title", ev.Title))
+		dh.log.Info("The program contains incomplete symbols and cannot be compiled.")
+		dh.log.Info("Please fix the incomplete symbols in SIMPL Windows before attempting to compile.")
 
 		// Extract error details from the dialog
-		childInfos := windows.CollectChildInfos(ev.Hwnd)
+		childInfos := dh.windowMgr.CollectChildInfos(ev.Hwnd)
 		for _, ci := range childInfos {
 			if ci.ClassName == "Edit" && len(ci.Text) > 50 {
-				slog.Info("Details", "text", ci.Text)
+				dh.log.Info("Details", slog.String("text", ci.Text))
 				break
 			}
 		}
@@ -72,134 +87,72 @@ func HandleIncompleteSymbolsDialog(pid uint32) error {
 	return nil
 }
 
-// HandleConvertCompileDialog detects and auto-confirms the "Convert/Compile" save prompt
-func HandleConvertCompileDialog(pid uint32) error {
-	if pid == 0 || windows.MonitorCh == nil {
-		return nil
-	}
-
-	slog.Info("Watching for 'Convert/Compile' save prompt...")
-	ev, ok := windows.WaitOnMonitor(5*time.Second,
-		func(e windows.WindowEvent) bool { return strings.EqualFold(e.Title, "Convert/Compile") },
-		func(e windows.WindowEvent) bool { return strings.Contains(strings.ToLower(e.Title), "convert/compile") },
-	)
-
+func (dh *DialogHandler) HandleConvertCompile() error {
+	ev, ok := dh.waitForDialog("Convert/Compile", 5*time.Second)
 	if ok {
-		slog.Info("Detected save prompt", "title", ev.Title)
-		_ = windows.SetForeground(ev.Hwnd)
+		_ = dh.windowMgr.SetForeground(ev.Hwnd)
 		time.Sleep(300 * time.Millisecond)
-		_ = windows.SendEnter()
-		slog.Info("Auto-confirmed save prompt with 'Yes'")
-	} else {
-		slog.Debug("Save prompt not detected within timeout")
+		dh.keyboard.SendEnter()
+		dh.log.Info("Auto-confirmed save prompt")
 	}
 
 	return nil
 }
 
-// HandleCommentedOutSymbolsDialog detects and auto-confirms the "Commented out Symbols" dialog
-func HandleCommentedOutSymbolsDialog(pid uint32) error {
-	if pid == 0 || windows.MonitorCh == nil {
-		return nil
-	}
-
-	slog.Info("Watching for 'Commented out Symbols' dialog...")
-	ev, ok := windows.WaitOnMonitor(5*time.Second,
-		func(e windows.WindowEvent) bool {
-			return strings.EqualFold(e.Title, "Commented out Symbols and/or Devices")
-		},
-		func(e windows.WindowEvent) bool { return strings.Contains(strings.ToLower(e.Title), "commented out") },
-	)
-
+func (dh *DialogHandler) HandleCommentedOutSymbols() error {
+	ev, ok := dh.waitForDialog("Commented out Symbols and/or Devices", 5*time.Second)
 	if ok {
-		slog.Info("Detected dialog", "title", ev.Title)
-		_ = windows.SetForeground(ev.Hwnd)
+		_ = dh.windowMgr.SetForeground(ev.Hwnd)
 		time.Sleep(300 * time.Millisecond)
-		_ = windows.SendEnter()
-		slog.Info("Auto-confirmed 'Commented out Symbols' dialog with 'Yes'")
-	} else {
-		slog.Debug("'Commented out Symbols' dialog not detected within timeout")
+		dh.keyboard.SendEnter()
+		dh.log.Info("Auto-confirmed commented symbols dialog")
 	}
 
 	return nil
 }
 
-// WaitForCompilingDialog waits for the "Compiling..." dialog to appear
-func WaitForCompilingDialog(pid uint32) error {
-	if pid == 0 || windows.MonitorCh == nil {
-		return nil
-	}
-
-	slog.Info("Waiting for 'Compiling...' dialog...")
-	ev, ok := windows.WaitOnMonitor(30*time.Second,
-		func(e windows.WindowEvent) bool { return strings.EqualFold(e.Title, "Compiling...") },
-		func(e windows.WindowEvent) bool { return strings.Contains(strings.ToLower(e.Title), "compiling") },
-	)
-
-	if ok {
-		slog.Info("Compile started", "title", ev.Title)
-	} else {
-		slog.Warn("Did not detect 'Compiling...' dialog within timeout")
+func (dh *DialogHandler) WaitForCompiling() error {
+	_, ok := dh.waitForDialog("Compiling...", 30*time.Second)
+	if !ok {
+		dh.log.Warn("Did not detect 'Compiling...' dialog within timeout")
 	}
 
 	return nil
 }
 
-// ParseCompileCompleteDialog waits for and parses the "Compile Complete" dialog
-// Returns the hwnd of the dialog (for later closing) and the parsed statistics
-func ParseCompileCompleteDialog(pid uint32) (uintptr, int, int, int, float64, error) {
-	if pid == 0 || windows.MonitorCh == nil {
-		return 0, 0, 0, 0, 0, fmt.Errorf("PID not available or monitor channel not initialized")
-	}
-
-	slog.Info("Waiting for 'Compile Complete' dialog...")
-	ev, ok := windows.WaitOnMonitor(5*time.Minute, // Increased timeout for large programs
-		func(e windows.WindowEvent) bool { return strings.EqualFold(e.Title, "Compile Complete") },
-		func(e windows.WindowEvent) bool {
-			return strings.Contains(strings.ToLower(e.Title), "compile complete")
-		},
-	)
-
+func (dh *DialogHandler) ParseCompileComplete() (hwnd uintptr, warnings, notices, errors int, compileTime float64, err error) {
+	ev, ok := dh.waitForDialog("Compile Complete", 5*time.Minute)
 	if !ok {
 		return 0, 0, 0, 0, 0, fmt.Errorf("compilation timeout: did not detect 'Compile Complete' dialog within 5 minutes")
 	}
 
-	slog.Info("Detected", "title", ev.Title)
-	hwnd := ev.Hwnd
-	childInfos := windows.CollectChildInfos(ev.Hwnd)
-	slog.Debug("Child controls in dialog", "title", ev.Title)
+	hwnd = ev.Hwnd
 
-	for _, ci := range childInfos {
-		slog.Debug("Child control", "class", ci.ClassName, "text", ci.Text, "length", len(ci.Text))
-	}
-
-	// Parse stats from Compile Complete dialog
-	var warnings, notices, errors int
-	var compileTime float64
-
+	// Parse statistics from dialog children
+	childInfos := dh.windowMgr.CollectChildInfos(ev.Hwnd)
 	for _, ci := range childInfos {
 		text := strings.ReplaceAll(ci.Text, "\r\n", "\n")
-		lines := strings.SplitSeq(text, "\n")
+		lines := strings.Split(text, "\n")
 
-		for t := range lines {
-			t = strings.TrimSpace(t)
-			if t == "" {
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" {
 				continue
 			}
 
-			if n, ok := ParseStatLine(t, "Program Warnings"); ok {
+			if n, ok := ParseStatLine(line, "Program Warnings"); ok {
 				warnings = n
 			}
 
-			if n, ok := ParseStatLine(t, "Program Notices"); ok {
+			if n, ok := ParseStatLine(line, "Program Notices"); ok {
 				notices = n
 			}
 
-			if n, ok := ParseStatLine(t, "Program Errors"); ok {
+			if n, ok := ParseStatLine(line, "Program Errors"); ok {
 				errors = n
 			}
 
-			if secs, ok := ParseCompileTimeLine(t); ok {
+			if secs, ok := ParseCompileTimeLine(line); ok {
 				compileTime = secs
 			}
 		}
@@ -208,121 +161,44 @@ func ParseCompileCompleteDialog(pid uint32) (uintptr, int, int, int, float64, er
 	return hwnd, warnings, notices, errors, compileTime, nil
 }
 
-// ParseProgramCompilationDialog waits for and parses the "Program Compilation" dialog
-// This dialog appears when there are warnings, notices, or errors
-func ParseProgramCompilationDialog(pid uint32, warnings, notices, errors int) ([]string, []string, []string, error) {
-	if pid == 0 || windows.MonitorCh == nil {
-		return nil, nil, nil, nil
-	}
-
-	if warnings == 0 && notices == 0 && errors == 0 {
-		return nil, nil, nil, nil
-	}
-
-	slog.Info("Waiting for 'Program Compilation' dialog...")
-	ev, ok := windows.WaitOnMonitor(10*time.Second,
-		func(e windows.WindowEvent) bool { return strings.EqualFold(e.Title, "Program Compilation") },
-		func(e windows.WindowEvent) bool {
-			return strings.Contains(strings.ToLower(e.Title), "program compilation")
-		},
-	)
-
+func (dh *DialogHandler) ParseProgramCompilation() (warnings, notices, errors []string, err error) {
+	ev, ok := dh.waitForDialog("Program Compilation", 10*time.Second)
 	if !ok {
-		slog.Debug("Program Compilation dialog not detected (may not have appeared)")
 		return nil, nil, nil, nil
 	}
 
-	slog.Info("Detected", "title", ev.Title)
-	childInfos := windows.CollectChildInfos(ev.Hwnd)
-	slog.Debug("Child controls in dialog", "title", ev.Title)
+	childInfos := dh.windowMgr.CollectChildInfos(ev.Hwnd)
 
+	// Extract messages from ListBox
 	for _, ci := range childInfos {
-		slog.Debug("Child control", "class", ci.ClassName, "text", ci.Text, "length", len(ci.Text))
-	}
+		if ci.ClassName != "ListBox" || len(ci.Items) == 0 {
+			continue
+		}
 
-	warningMessages := []string{}
-	noticeMessages := []string{}
-	errorMessages := []string{}
-
-	// Extract messages from ListBox and categorize them
-	for _, ci := range childInfos {
-		// TODO: Never nest
-		if ci.ClassName == "ListBox" && len(ci.Items) > 0 {
-			// Use items directly instead of splitting text
-			for _, line := range ci.Items {
-				line = strings.TrimSpace(line)
-				if line == "" {
-					continue
-				}
-
-				// Categorize based on prefix
-				lineUpper := strings.ToUpper(line)
-				if strings.HasPrefix(lineUpper, "ERROR") {
-					errorMessages = append(errorMessages, line)
-				} else if strings.HasPrefix(lineUpper, "WARNING") {
-					warningMessages = append(warningMessages, line)
-				} else if strings.HasPrefix(lineUpper, "NOTICE") {
-					noticeMessages = append(noticeMessages, line)
-				} else {
-					// If it doesn't have a prefix, it's likely a continuation of the previous message
-					// Append to the last message in the appropriate list
-					if len(errorMessages) > 0 {
-						errorMessages[len(errorMessages)-1] += " " + line
-					} else if len(warningMessages) > 0 {
-						warningMessages[len(warningMessages)-1] += " " + line
-					} else if len(noticeMessages) > 0 {
-						noticeMessages[len(noticeMessages)-1] += " " + line
-					}
-				}
+		for _, line := range ci.Items {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
 			}
+
+			categorizeMessage(line, &errors, &warnings, &notices)
 		}
 	}
 
-	// Log the messages
-	if len(errorMessages) > 0 {
-		slog.Info("Error messages:")
-		for i, msg := range errorMessages {
-			slog.Info("", "number", i+1, "message", msg)
-		}
-	}
-
-	if len(warningMessages) > 0 {
-		slog.Info("Warning messages:")
-		for i, msg := range warningMessages {
-			slog.Info("", "number", i+1, "message", msg)
-		}
-	}
-
-	if len(noticeMessages) > 0 {
-		slog.Info("Notice messages:")
-		for i, msg := range noticeMessages {
-			slog.Info("", "number", i+1, "message", msg)
-		}
-	}
-
-	return errorMessages, warningMessages, noticeMessages, nil
+	return warnings, notices, errors, nil
 }
 
-// HandleConfirmationDialog handles the "Confirmation" dialog that may appear when closing
-func HandleConfirmationDialog(pid uint32) error {
-	if pid == 0 || windows.MonitorCh == nil {
-		return nil
-	}
-
-	ev, ok := windows.WaitOnMonitor(2*time.Second,
-		func(e windows.WindowEvent) bool { return strings.EqualFold(e.Title, "Confirmation") },
-		func(e windows.WindowEvent) bool { return strings.Contains(strings.ToLower(e.Title), "confirmation") },
-	)
-
+func (dh *DialogHandler) HandleConfirmation() error {
+	ev, ok := dh.waitForDialog("Confirmation", 2*time.Second)
 	if ok {
-		slog.Info("Detected dialog (clicking 'No' to close without saving)", "title", ev.Title)
-		// Find and click the "No" button directly
-		if windows.FindAndClickButton(ev.Hwnd, "&No") {
-			slog.Debug("Successfully clicked 'No' button")
+		dh.log.Info("Handling confirmation dialog")
+
+		if dh.controlReader.FindAndClickButton(ev.Hwnd, "&No") {
+			dh.log.Debug("Successfully clicked 'No' button")
 			time.Sleep(500 * time.Millisecond)
 		} else {
-			slog.Warn("Could not find 'No' button, trying to close dialog")
-			windows.CloseWindow(ev.Hwnd, "Confirmation dialog")
+			dh.log.Warn("Could not find 'No' button, trying to close dialog")
+			dh.windowMgr.CloseWindow(ev.Hwnd, "Confirmation dialog")
 			time.Sleep(500 * time.Millisecond)
 		}
 	}
@@ -330,46 +206,33 @@ func HandleConfirmationDialog(pid uint32) error {
 	return nil
 }
 
-// init initializes global dialog handler using real implementations (for backward compatibility)
-func init() {
-	_ = NewDialogHandler(
-		windows.NewRealWindowManager(),
-		windows.NewRealKeyboardInjector(),
-		windows.NewRealControlReader(),
-	)
+// categorizeMessage adds a message line to the appropriate category.
+// If the line starts with ERROR/WARNING/NOTICE, it's a new message.
+// Otherwise, it's a continuation of the previous message.
+func categorizeMessage(line string, errors, warnings, notices *[]string) {
+	lineUpper := strings.ToUpper(line)
+
+	switch {
+	case strings.HasPrefix(lineUpper, "ERROR"):
+		*errors = append(*errors, line)
+	case strings.HasPrefix(lineUpper, "WARNING"):
+		*warnings = append(*warnings, line)
+	case strings.HasPrefix(lineUpper, "NOTICE"):
+		*notices = append(*notices, line)
+	default:
+		// Continuation of previous message
+		appendContinuation(line, errors, warnings, notices)
+	}
 }
 
-// Backward-compatible wrapper functions that delegate to DialogHandler
-// These maintain the existing API while using the new dependency injection internally
-
-func HandleOperationCompleteDialogWithHandler(pid uint32, handler *DialogHandler) error {
-	return handler.HandleOperationComplete(pid)
-}
-
-func HandleIncompleteSymbolsDialogWithHandler(pid uint32, handler *DialogHandler) error {
-	return handler.HandleIncompleteSymbols(pid)
-}
-
-func HandleConvertCompileDialogWithHandler(pid uint32, handler *DialogHandler) error {
-	return handler.HandleConvertCompile(pid)
-}
-
-func HandleCommentedOutSymbolsDialogWithHandler(pid uint32, handler *DialogHandler) error {
-	return handler.HandleCommentedOutSymbols(pid)
-}
-
-func WaitForCompilingDialogWithHandler(pid uint32, handler *DialogHandler) error {
-	return handler.WaitForCompiling(pid)
-}
-
-func ParseCompileCompleteDialogWithHandler(pid uint32, handler *DialogHandler) (uintptr, int, int, int, float64, error) {
-	return handler.ParseCompileComplete(pid)
-}
-
-func ParseProgramCompilationDialogWithHandler(pid uint32, handler *DialogHandler) ([]string, []string, []string, error) {
-	return handler.ParseProgramCompilation(pid)
-}
-
-func HandleConfirmationDialogWithHandler(pid uint32, handler *DialogHandler) error {
-	return handler.HandleConfirmation(pid)
+// appendContinuation appends a continuation line to the most recent message.
+func appendContinuation(line string, errors, warnings, notices *[]string) {
+	switch {
+	case len(*errors) > 0:
+		(*errors)[len(*errors)-1] += " " + line
+	case len(*warnings) > 0:
+		(*warnings)[len(*warnings)-1] += " " + line
+	case len(*notices) > 0:
+		(*notices)[len(*notices)-1] += " " + line
+	}
 }

@@ -66,3 +66,22 @@ type WindowEvent struct {
 	Pid   uint32
 	Class string
 }
+
+// SHELLEXECUTEINFO for ShellExecuteEx API
+type SHELLEXECUTEINFO struct {
+	CbSize       uint32
+	FMask        uint32
+	Hwnd         uintptr
+	LpVerb       *uint16
+	LpFile       *uint16
+	LpParameters *uint16
+	LpDirectory  *uint16
+	NShow        int32
+	HInstApp     uintptr
+	LpIDList     uintptr
+	LpClass      *uint16
+	HkeyClass    uintptr
+	DwHotKey     uint32
+	HIcon        uintptr
+	HProcess     uintptr
+}

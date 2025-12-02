@@ -10,6 +10,7 @@ import (
 type WindowManager interface {
 	CloseWindow(hwnd uintptr, title string)
 	SetForeground(hwnd uintptr) bool
+	VerifyForegroundWindow(expectedHwnd uintptr, expectedPid uint32) bool
 	IsElevated() bool
 	CollectChildInfos(hwnd uintptr) []windows.ChildInfo
 	WaitOnMonitor(timeout time.Duration, matchers ...func(windows.WindowEvent) bool) (windows.WindowEvent, bool)
@@ -17,15 +18,19 @@ type WindowManager interface {
 
 // KeyboardInjector handles keyboard input
 type KeyboardInjector interface {
-	SendF12() bool
-	SendAltF12() bool
-	SendEnter() bool
+	SendF12()
+	SendAltF12()
+	SendEnter()
+	SendF12ToWindow(hwnd uintptr) bool
+	SendAltF12ToWindow(hwnd uintptr) bool
+	SendF12WithSendInput() bool
+	SendAltF12WithSendInput() bool
 }
 
 // ProcessManager handles SIMPL process operations
 type ProcessManager interface {
 	GetPid() uint32
-	FindWindow(processName string, debug bool) (uintptr, string)
+	FindWindow(targetPid uint32, debug bool) (uintptr, string)
 	WaitForReady(hwnd uintptr, timeout time.Duration) bool
 }
 

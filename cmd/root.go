@@ -1,30 +1,25 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Norgate-AV/smpc/internal/compiler"
-	"github.com/Norgate-AV/smpc/internal/logging"
+	"github.com/Norgate-AV/smpc/internal/logger"
 	"github.com/Norgate-AV/smpc/internal/simpl"
 	"github.com/Norgate-AV/smpc/internal/version"
 	"github.com/Norgate-AV/smpc/internal/windows"
 )
 
 var (
-	verbose      bool
-	recompileAll bool
-	showLogs     bool
-
 	// Track SIMPL Windows for cleanup on interrupt
 	simplHwnd uintptr
 	simplPid  uint32
@@ -46,43 +41,19 @@ func init() {
 	RootCmd.SetVersionTemplate(`{{printf "%s\n" .Version}}`)
 
 	// Add flags
-	RootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "V", false, "enable verbose output")
-	RootCmd.PersistentFlags().BoolVarP(&recompileAll, "recompile-all", "r", false, "trigger Recompile All (Alt+F12) instead of Compile (F12)")
-	RootCmd.PersistentFlags().BoolVarP(&showLogs, "logs", "l", false, "print the current log file to stdout and exit")
+	RootCmd.PersistentFlags().BoolP("verbose", "V", false, "enable verbose output")
+	RootCmd.PersistentFlags().BoolP("recompile-all", "r", false, "trigger Recompile All (Alt+F12) instead of Compile (F12)")
+	RootCmd.PersistentFlags().BoolP("logs", "l", false, "print the current log file to stdout and exit")
 }
 
-// validateArgs validates arguments or handles --logs flag
+// validateArgs validates that a .smw file argument is provided (if any args given)
 func validateArgs(cmd *cobra.Command, args []string) error {
-	// If --logs flag is set, print log file and exit
-	if showLogs {
-		logPath := logging.GetLogPath()
-		if logPath == "" {
-			fmt.Fprintln(os.Stderr, "ERROR: Log file path not initialized")
-			osExit(1)
-		}
-
-		file, err := os.Open(logPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				fmt.Fprintf(os.Stderr, "Log file does not exist: %s\n", logPath)
-				osExit(1)
-			}
-			fmt.Fprintf(os.Stderr, "ERROR: Failed to open log file: %v\n", err)
-			osExit(1)
-		}
-
-		defer file.Close()
-
-		if _, err := io.Copy(os.Stdout, file); err != nil {
-			fmt.Fprintf(os.Stderr, "ERROR: Failed to read log file: %v\n", err)
-			osExit(1)
-		}
-
-		osExit(0)
+	// Allow 0 args for --logs flag, which is handled in Execute
+	if len(args) == 0 {
 		return nil
 	}
 
-	// Otherwise, validate .smw file argument
+	// Validate .smw file argument
 	if err := cobra.ExactArgs(1)(cmd, args); err != nil {
 		return err
 	}
@@ -94,220 +65,281 @@ func validateArgs(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func Execute(cmd *cobra.Command, args []string) error {
-	slog.Debug("Execute() called", "args", args)
-	slog.Debug("Flags set", "verbose", verbose, "recompileAll", recompileAll)
+// handleLogsFlag processes the --logs flag and exits if needed
+func handleLogsFlag(cfg *Config) error {
+	if !cfg.ShowLogs {
+		return nil
+	}
 
-	// Check if running as admin
-	slog.Debug("Checking elevation status")
+	if err := logger.PrintLogFile(nil, logger.LoggerOptions{}); err != nil {
+		if os.IsNotExist(err) {
+			logPath := logger.GetLogPath(logger.LoggerOptions{})
+			fmt.Fprintf(os.Stderr, "Log file does not exist: %s\n", logPath)
+			osExit(1)
+		}
+
+		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
+		osExit(1)
+	}
+
+	osExit(0)
+	return nil // Won't actually reach here due to osExit
+}
+
+// initializeLogger creates a logger and logs startup information
+func initializeLogger(cfg *Config, args []string) (logger.LoggerInterface, error) {
+	log, err := logger.NewLogger(logger.LoggerOptions{
+		Verbose:  cfg.Verbose,
+		Compress: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create logger: %w", err)
+	}
+
+	return log, nil
+}
+
+// ensureElevated checks for admin privileges and relaunches if needed
+func ensureElevated(log logger.LoggerInterface) error {
+	log.Debug("Checking elevation status")
 	if !windows.IsElevated() {
-		slog.Info("This program requires administrator privileges")
-		slog.Info("Relaunching as administrator")
-		slog.Debug("Not elevated, relaunching as admin")
+		log.Info("This program requires administrator privileges")
+		log.Info("Relaunching as administrator")
 
 		if err := windows.RelaunchAsAdmin(); err != nil {
-			slog.Error("RelaunchAsAdmin failed", "error", err)
+			log.Error("RelaunchAsAdmin failed", slog.Any("error", err))
 			return fmt.Errorf("error relaunching as admin: %w", err)
 		}
 
 		// Exit this instance, the elevated one will continue
-		slog.Debug("Relaunched successfully, exiting non-elevated instance")
+		log.Debug("Relaunched successfully, exiting non-elevated instance")
 		return nil
 	}
 
-	slog.Info("Running with administrator privileges ✓")
-	slog.Debug("Running with administrator privileges")
+	log.Debug("Running with administrator privileges")
+	return nil
+}
 
-	// Get the file path from the command arguments
-	filePath := args[0]
-	slog.Debug("Processing file", "path", filePath)
+// validateAndResolvePath validates the file exists and returns its absolute path
+func validateAndResolvePath(filePath string, log logger.LoggerInterface) (string, error) {
+	log.Debug("Processing file", slog.String("path", filePath))
 
-	// Check if the file exists
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		return fmt.Errorf("file does not exist: %s", filePath)
+		return "", fmt.Errorf("file does not exist: %s", filePath)
 	}
 
-	// Convert to absolute path
 	absPath, err := filepath.Abs(filePath)
 	if err != nil {
-		return fmt.Errorf("error resolving file path: %w", err)
+		return "", fmt.Errorf("error resolving file path: %w", err)
 	}
 
-	// Start background window monitor to observe dialogs and window changes in real time
-	slog.Debug("Creating context and starting monitor goroutine")
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel() // Ensure the goroutine is cleaned up
-	go simpl.StartMonitoring(ctx)
-	slog.Debug("Monitor goroutine started")
+	return absPath, nil
+}
+
+// launchSIMPLWindows starts monitoring, launches SIMPL, and returns cleanup function
+func launchSIMPLWindows(simplClient *simpl.Client, absPath string, log logger.LoggerInterface) (hwnd uintptr, pid uint32, cleanup func(), err error) {
+	// Start background window monitor
+	stopMonitor := simplClient.StartMonitoring()
+	log.Debug("Background window monitor started")
 
 	// Open the file with SIMPL Windows application using elevated privileges
 	// SW_SHOWNORMAL = 1
-	slog.Debug("Launching SIMPL Windows with file", "path", absPath)
-	if err := windows.ShellExecute(0, "runas", simpl.SIMPL_WINDOWS_PATH, absPath, "", 1); err != nil {
-		slog.Error("ShellExecute failed", "error", err)
-		return fmt.Errorf("error opening file: %w", err)
+	log.Debug("Launching SIMPL Windows with file", slog.String("path", absPath))
+	pid, err = windows.ShellExecuteEx(0, "open", absPath, "", "", 1)
+	if err != nil {
+		stopMonitor()
+		log.Error("ShellExecuteEx failed", slog.Any("error", err))
+		return 0, 0, nil, fmt.Errorf("error opening file: %w", err)
 	}
 
-	slog.Debug("SIMPL Windows launched successfully")
+	log.Info("SIMPL Windows process started", slog.Uint64("pid", uint64(pid)))
 
-	// At this point, the SIMPL Windows process should have started
-	// Meaning, if we fail from any point onward, we need to make sure we
-	// clean up by closing SIMPL Windows
-
-	// Try to get the PID early so signal handlers can use it for cleanup
-	// Give it a moment for the process to actually start
-	time.Sleep(500 * time.Millisecond)
-	earlyPid := simpl.GetPid()
-	if earlyPid != 0 {
-		simplPid = earlyPid
-		slog.Debug("Early PID detection", "pid", earlyPid)
+	// Return cleanup function that stops monitor
+	cleanup = func() {
+		stopMonitor()
 	}
 
+	return 0, pid, cleanup, nil
+}
+
+// setupSignalHandlers configures console control and interrupt signal handlers
+func setupSignalHandlers(simplClient *simpl.Client, hwndPtr *uintptr, pid uint32, log logger.LoggerInterface) {
 	// Set up Windows console control handler to catch window close events
-	// This is more reliable than signal handling on Windows
 	_ = windows.SetConsoleCtrlHandler(func(ctrlType uint32) uintptr {
-		slog.Debug("Received console control event", "type", windows.GetCtrlTypeName(ctrlType), "code", ctrlType)
-		slog.Info("Received console control event, cleaning up", "type", windows.GetCtrlTypeName(ctrlType))
+		log.Debug("Received console control event",
+			slog.String("type", windows.GetCtrlTypeName(ctrlType)),
+			slog.Uint64("code", uint64(ctrlType)),
+		)
 
-		// Try to cleanup using hwnd if we have it
-		if simplHwnd != 0 {
-			slog.Debug("Cleaning up SIMPL Windows", "hwnd", simplHwnd)
-			simpl.Cleanup(simplHwnd)
-		} else if simplPid != 0 {
-			// If we don't have hwnd yet but have PID, force terminate
-			slog.Debug("Force terminating SIMPL Windows", "pid", simplPid)
-			_ = windows.TerminateProcess(simplPid)
-		} else {
-			// Last resort - try to find and kill any smpwin.exe process we may have started
-			slog.Debug("Attempting to find and terminate SIMPL Windows process")
-			pid := simpl.GetPid()
+		log.Info("Cleaning up after console control event")
+		simplClient.ForceCleanup(*hwndPtr, pid)
+		log.Debug("Cleanup completed, exiting")
 
-			if pid != 0 {
-				slog.Debug("Found SIMPL Windows PID, terminating", "pid", pid)
-				_ = windows.TerminateProcess(pid)
-			} else {
-				slog.Debug("Could not find SIMPL Windows process to terminate")
-			}
-		}
-
-		slog.Debug("Cleanup completed, exiting")
-
-		// Must call os.Exit to actually terminate the process
-		// Otherwise the handler returns and execution continues
 		os.Exit(130)
-
-		// Return TRUE to indicate we handled the event
-		// (this won't actually be reached due to os.Exit, but required for the function signature)
 		return 1
 	})
 
-	// Set up signal handler immediately to catch Ctrl+C during window wait
+	// Set up signal handler for Ctrl+C
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
 		sig := <-sigChan
-		slog.Debug("Received signal", "signal", sig)
-		slog.Info("Received interrupt signal, cleaning up")
-		slog.Debug("Running cleanup due to interrupt")
+		log.Debug("Received signal", slog.Any("signal", sig))
+		log.Info("Interrupt signal received, starting cleanup")
 
-		// Try to cleanup using hwnd if we have it
-		if simplHwnd != 0 {
-			slog.Debug("Cleaning up SIMPL Windows", "hwnd", simplHwnd)
-			simpl.Cleanup(simplHwnd)
-		} else if simplPid != 0 {
-			// If we don't have hwnd yet but have PID, force terminate
-			slog.Debug("Force terminating SIMPL Windows", "pid", simplPid)
-			_ = windows.TerminateProcess(simplPid)
-		} else {
-			// Last resort - try to find and kill any smpwin.exe process we may have started
-			slog.Debug("Attempting to find and terminate SIMPL Windows process")
-			pid := simpl.GetPid()
+		simplClient.ForceCleanup(*hwndPtr, pid)
 
-			if pid != 0 {
-				slog.Debug("Found SIMPL Windows PID, terminating", "pid", pid)
-				_ = windows.TerminateProcess(pid)
-			}
-		}
-
-		slog.Debug("Cleanup completed, exiting")
-		os.Exit(130) // Standard exit code for Ctrl+C
+		log.Debug("Cleanup completed, exiting")
+		os.Exit(130)
 	}()
+}
 
-	slog.Debug("Signal handler registered (early)")
+// waitForWindowReady waits for SIMPL window to appear and become responsive
+func waitForWindowReady(simplClient *simpl.Client, pid uint32, log logger.LoggerInterface) (uintptr, error) {
+	log.Info("Waiting for SIMPL Windows to fully launch...")
 
-	// Wait for the main window to appear (with a 1 minute timeout)
-	slog.Info("Waiting for SIMPL Windows to fully launch...")
-	slog.Debug("Waiting for SIMPL Windows window to appear")
-
-	hwnd, found := simpl.WaitForAppear(60 * time.Second)
+	hwnd, found := simplClient.WaitForAppear(pid, 3*time.Minute)
 	if !found {
-		slog.Error("Timeout waiting for window to appear")
-		return fmt.Errorf("timed out waiting for SIMPL Windows window to appear")
+		log.Error("Timeout waiting for window to appear after 3 minutes")
+		log.Info("Forcing SIMPL Windows to terminate due to timeout")
+		simplClient.ForceCleanup(0, pid)
+		return 0, fmt.Errorf("timed out waiting for SIMPL Windows window to appear after 3 minutes")
 	}
 
-	slog.Debug("Window appeared", "hwnd", hwnd)
+	log.Debug("Window appeared", slog.Uint64("hwnd", uint64(hwnd)))
 
-	// Store hwnd for signal handler cleanup
-	simplHwnd = hwnd
-	slog.Debug("Stored hwnd for signal handler", "hwnd", simplHwnd)
-
-	// Set up deferred cleanup to ensure SIMPL Windows is closed on exit
-	defer simpl.Cleanup(hwnd)
-	slog.Debug("Cleanup deferred")
-
-	// Wait for the window to be fully ready and responsive (with a 30 second timeout)
-	slog.Debug("Waiting for window to be ready")
-	if !simpl.WaitForReady(hwnd, 30*time.Second) {
-		slog.Error("Window not responding properly")
-		return fmt.Errorf("window appeared but is not responding properly")
+	// Wait for the window to be fully ready and responsive
+	if !simplClient.WaitForReady(hwnd, 30*time.Second) {
+		log.Error("Window not responding properly")
+		return 0, fmt.Errorf("window appeared but is not responding properly")
 	}
-
-	slog.Debug("Window is ready")
 
 	// Small extra delay to allow UI to finish settling
-	slog.Info("Waiting a few extra seconds for UI to settle...")
+	log.Debug("Waiting a few extra seconds for UI to settle...")
 	time.Sleep(5 * time.Second)
 
-	slog.Info("Successfully opened file", "path", absPath)
+	return hwnd, nil
+}
 
-	// Run the compilation
-	result, err := compiler.Compile(compiler.CompileOptions{
+// runCompilation creates a compiler and executes the compilation
+func runCompilation(absPath string, hwnd uintptr, pidPtr *uint32, cfg *Config, log logger.LoggerInterface) (*compiler.CompileResult, error) {
+	comp := compiler.NewCompiler(log)
+
+	result, err := comp.Compile(compiler.CompileOptions{
 		FilePath:     absPath,
-		RecompileAll: recompileAll,
+		RecompileAll: cfg.RecompileAll,
 		Hwnd:         hwnd,
-		Ctx:          ctx,
-		SimplPidPtr:  &simplPid,
+		SimplPidPtr:  pidPtr,
 	})
 	if err != nil {
-		slog.Error("Compilation failed", "error", err)
-		slog.Info("Press Enter to exit...")
-		_, _ = fmt.Scanln()
+		log.Error("Compilation failed", slog.Any("error", err))
+		return nil, err
+	}
+
+	return result, nil
+}
+
+// displayCompilationResults shows the compilation summary to the user
+func displayCompilationResults(result *compiler.CompileResult, log logger.LoggerInterface) {
+	log.Info("=== Compile Summary ===")
+	if result.Errors > 0 {
+		log.Info(fmt.Sprintf("Errors: %d", result.Errors))
+	}
+
+	log.Info(fmt.Sprintf("Warnings: %d", result.Warnings))
+	log.Info(fmt.Sprintf("Notices: %d", result.Notices))
+	log.Info(fmt.Sprintf("Compile Time: %.2f seconds", result.CompileTime))
+	log.Info("=======================")
+
+	// Also log structured data to file
+	log.Info("Compilation complete",
+		slog.Int("errors", result.Errors),
+		slog.Int("warnings", result.Warnings),
+		slog.Int("notices", result.Notices),
+		slog.Float64("compileTime", result.CompileTime),
+	)
+}
+
+func Execute(cmd *cobra.Command, args []string) error {
+	cfg := NewConfigFromFlags(cmd)
+
+	if err := handleLogsFlag(cfg); err != nil {
 		return err
 	}
 
-	// Show compilation summary
-	slog.Info("=== Compile Summary ===")
-	if result.Errors > 0 {
-		slog.Info("Errors", "count", result.Errors)
+	if len(args) == 0 {
+		return fmt.Errorf("file path required")
 	}
-	slog.Info("Warnings", "count", result.Warnings)
-	slog.Info("Notices", "count", result.Notices)
-	slog.Info("Compile Time", "seconds", result.CompileTime)
-	slog.Info("=======================")
 
-	// Exit with error if compilation failed
+	log, err := initializeLogger(cfg, args)
+	if err != nil {
+		return err
+	}
+	defer log.Close()
+
+	log.Debug("Starting smpc", slog.Any("args", args))
+	log.Debug("Flags set",
+		slog.Bool("verbose", cfg.Verbose),
+		slog.Bool("recompileAll", cfg.RecompileAll),
+	)
+
+	// Recover from panics and log them
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("PANIC RECOVERED",
+				slog.Any("panic", r),
+				slog.String("stack", string(debug.Stack())),
+			)
+
+			fmt.Fprintf(os.Stderr, "\n*** PANIC: %v ***\n", r)
+			fmt.Fprintf(os.Stderr, "Check log file for details\n")
+		}
+	}()
+
+	if err := ensureElevated(log); err != nil {
+		return err
+	}
+
+	absPath, err := validateAndResolvePath(args[0], log)
+	if err != nil {
+		return err
+	}
+
+	simplClient := simpl.NewClient(log)
+	_, pid, cleanup, err := launchSIMPLWindows(simplClient, absPath, log)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	// Store pid globally for signal handlers
+	simplPid = pid
+
+	setupSignalHandlers(simplClient, &simplHwnd, pid, log)
+
+	hwnd, err := waitForWindowReady(simplClient, pid, log)
+	if err != nil {
+		return err
+	}
+
+	// Store hwnd globally for signal handlers and cleanup
+	simplHwnd = hwnd
+	log.Debug("Stored hwnd for signal handler", slog.Uint64("hwnd", uint64(simplHwnd)))
+
+	defer simplClient.Cleanup(hwnd)
+
+	result, err := runCompilation(absPath, hwnd, &simplPid, cfg, log)
+	if err != nil {
+		return err
+	}
+
+	displayCompilationResults(result, log)
+
 	if result.HasErrors {
-		slog.Error("Compilation failed with errors")
-		slog.Info("Press Enter to exit...")
-		_, _ = fmt.Scanln()
+		log.Error("Compilation failed with errors")
 		return fmt.Errorf("compilation failed with %d error(s)", result.Errors)
 	}
 
-	slog.Debug("Compilation completed successfully")
-	slog.Info("Press Enter to exit...")
-	_, _ = fmt.Scanln()
-
-	slog.Debug("Execute() completed successfully")
 	return nil
 }

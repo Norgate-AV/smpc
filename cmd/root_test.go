@@ -9,15 +9,18 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/Norgate-AV/smpc/internal/logging"
+	"github.com/Norgate-AV/smpc/internal/logger"
 	"github.com/Norgate-AV/smpc/internal/version"
 )
 
 // resetFlags resets all flags to their default values between tests
 func resetFlags() {
-	verbose = false
-	recompileAll = false
-	showLogs = false
+	// Reset command flags
+	_ = RootCmd.Flags().Set("verbose", "false")
+	_ = RootCmd.Flags().Set("recompile-all", "false")
+	_ = RootCmd.Flags().Set("logs", "false")
+
+	// Reset global state
 	simplHwnd = 0
 	simplPid = 0
 }
@@ -89,9 +92,10 @@ func TestValidateArgs_MissingArgument(t *testing.T) {
 	cmd := &cobra.Command{}
 	args := []string{}
 
+	// validateArgs now allows 0 args (for --logs flag)
+	// The actual requirement for file is checked in Execute
 	err := validateArgs(cmd, args)
-	assert.Error(t, err, "Should return error when no file provided")
-	assert.Contains(t, err.Error(), "accepts 1 arg(s), received 0")
+	assert.NoError(t, err, "validateArgs should allow 0 args for --logs flag")
 }
 
 // TestValidateArgs_TooManyArguments tests validation with multiple arguments
@@ -106,39 +110,42 @@ func TestValidateArgs_TooManyArguments(t *testing.T) {
 	assert.Contains(t, err.Error(), "accepts 1 arg(s), received 2")
 }
 
-// TestValidateArgs_LogsFlag tests --logs flag displays log file content
+// TestValidateArgs_LogsFlag tests the --logs flag functionality
 func TestValidateArgs_LogsFlag(t *testing.T) {
 	resetFlags()
+	defer resetFlags() // Clean up after test
 
 	// Create temp directory for log file
 	tmpDir := t.TempDir()
 	logPath := filepath.Join(tmpDir, "smpc", "smpc.log")
 
-	// Setup logging to temp directory
+	// Setup logger to temp directory
 	oldLocalAppData := os.Getenv("LOCALAPPDATA")
 	defer os.Setenv("LOCALAPPDATA", oldLocalAppData)
 	os.Setenv("LOCALAPPDATA", tmpDir)
 
-	// Initialize logging
-	_ = logging.Setup(false)
-	defer logging.Close()
+	// Initialize logger
+	log, err := logger.NewLogger(logger.LoggerOptions{Verbose: false})
+	assert.NoError(t, err)
+	defer log.Close()
 
 	// Write some test content to log file
 	testContent := "Test log content\nLine 2\nLine 3"
-	err := os.MkdirAll(filepath.Dir(logPath), 0o755)
+	err = os.MkdirAll(filepath.Dir(logPath), 0o755)
 	assert.NoError(t, err)
 	err = os.WriteFile(logPath, []byte(testContent), 0o644)
 	assert.NoError(t, err)
 
-	// Set showLogs flag
-	showLogs = true
+	// Set showLogs flag on PersistentFlags
+	err = RootCmd.PersistentFlags().Set("logs", "true")
+	assert.NoError(t, err)
 
 	// Capture stdout
 	oldStdout := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	// Capture exit call (validateArgs calls os.Exit(0) for --logs)
+	// Capture exit call (Execute calls os.Exit(0) for --logs)
 	exitCalled := false
 	oldOsExit := osExit
 	osExit = func(code int) {
@@ -148,11 +155,10 @@ func TestValidateArgs_LogsFlag(t *testing.T) {
 
 	defer func() { osExit = oldOsExit }()
 
-	cmd := &cobra.Command{}
 	args := []string{} // --logs doesn't require file argument
 
-	// Call validateArgs
-	_ = validateArgs(cmd, args)
+	// Call Execute with RootCmd (which now handles --logs)
+	_ = Execute(RootCmd, args)
 
 	// Restore stdout
 	w.Close()
@@ -170,7 +176,7 @@ func TestValidateArgs_LogsFlag(t *testing.T) {
 
 // TestValidateArgs_LogsFlag_NoLogFile tests --logs flag when log file doesn't exist
 func TestValidateArgs_LogsFlag_NoLogFile(t *testing.T) {
-	// Skip this test - it's difficult to test because logging.Setup() creates the file
+	// Skip this test - it's difficult to test because logger.Setup() creates the file
 	// and keeps a file handle open. The behavior is adequately tested by integration tests.
 	t.Skip("Skipping test - file handle management makes this difficult to test in unit tests")
 }
@@ -284,10 +290,10 @@ func TestRootCmd_Flags(t *testing.T) {
 			cmd := &cobra.Command{
 				Use: "test",
 			}
-			
-			cmd.PersistentFlags().BoolVarP(&verbose, "verbose", "V", false, "enable verbose output")
-			cmd.PersistentFlags().BoolVarP(&recompileAll, "recompile-all", "r", false, "trigger Recompile All")
-			cmd.PersistentFlags().BoolVarP(&showLogs, "logs", "l", false, "print log file")
+
+			cmd.PersistentFlags().BoolP("verbose", "V", false, "enable verbose output")
+			cmd.PersistentFlags().BoolP("recompile-all", "r", false, "trigger Recompile All")
+			cmd.PersistentFlags().BoolP("logs", "l", false, "print log file")
 
 			// Parse flags
 			cmd.SetArgs(tt.args)
@@ -295,6 +301,9 @@ func TestRootCmd_Flags(t *testing.T) {
 			assert.NoError(t, err, "Flag parsing should not error")
 
 			// Verify flag values
+			verbose, _ := cmd.Flags().GetBool("verbose")
+			recompileAll, _ := cmd.Flags().GetBool("recompile-all")
+			showLogs, _ := cmd.Flags().GetBool("logs")
 			assert.Equal(t, tt.expectedVerbose, verbose, "Verbose flag mismatch")
 			assert.Equal(t, tt.expectedRecompile, recompileAll, "Recompile flag mismatch")
 			assert.Equal(t, tt.expectedLogs, showLogs, "Logs flag mismatch")
@@ -335,7 +344,7 @@ func TestRootCmd_InvalidFlag(t *testing.T) {
 }
 
 // Helper function to capture command output
-func captureCommandOutput(t *testing.T, args []string) string {
+func captureCommandOutput(_ *testing.T, args []string) string {
 	// Capture stdout
 	oldStdout := os.Stdout
 	r, w, _ := os.Pipe()

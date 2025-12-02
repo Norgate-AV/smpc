@@ -2,7 +2,6 @@ package windows
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 	"unsafe"
@@ -50,9 +49,7 @@ func RelaunchAsAdmin() error {
 
 	// Check if running via 'go run' (exe will be in temp dir)
 	if strings.Contains(exe, "go-build") {
-		slog.Error("Detected 'go run' - please build the executable first with: go build -o smpc.exe")
-		slog.Error("Then run: .\\smpc.exe <file-path>")
-		return fmt.Errorf("cannot relaunch when run via 'go run', please build first")
+		return fmt.Errorf("cannot relaunch when run via 'go run', please build the executable first with: go build -o smpc.exe")
 	}
 
 	// Build args string (excluding the exe name)

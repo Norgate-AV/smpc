@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/Norgate-AV/smpc/internal/logger"
 	"github.com/Norgate-AV/smpc/internal/testutil"
 	"github.com/Norgate-AV/smpc/internal/windows"
 )
@@ -47,9 +48,10 @@ func TestDialogHandler_HandleOperationComplete(t *testing.T) {
 				WithWaitOnMonitorResults(tt.waitOnMonitorResults...)
 			mockKbd := testutil.NewMockKeyboardInjector()
 			mockCtrl := testutil.NewMockControlReader()
+			log := logger.NewNoOpLogger()
 
-			handler := NewDialogHandler(mockWin, mockKbd, mockCtrl)
-			err := handler.HandleOperationComplete(tt.pid)
+			handler := NewDialogHandler(log, mockWin, mockKbd, mockCtrl)
+			err := handler.HandleOperationComplete()
 
 			assert.NoError(t, err)
 			if tt.expectClose {
@@ -105,9 +107,10 @@ func TestDialogHandler_HandleIncompleteSymbols(t *testing.T) {
 				WithChildInfos(tt.childInfos...)
 			mockKbd := testutil.NewMockKeyboardInjector()
 			mockCtrl := testutil.NewMockControlReader()
+			log := logger.NewNoOpLogger()
 
-			handler := NewDialogHandler(mockWin, mockKbd, mockCtrl)
-			err := handler.HandleIncompleteSymbols(tt.pid)
+			handler := NewDialogHandler(log, mockWin, mockKbd, mockCtrl)
+			err := handler.HandleIncompleteSymbols()
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -156,9 +159,10 @@ func TestDialogHandler_HandleConvertCompile(t *testing.T) {
 				WithWaitOnMonitorResults(tt.waitOnMonitorResults...)
 			mockKbd := testutil.NewMockKeyboardInjector()
 			mockCtrl := testutil.NewMockControlReader()
+			log := logger.NewNoOpLogger()
 
-			handler := NewDialogHandler(mockWin, mockKbd, mockCtrl)
-			err := handler.HandleConvertCompile(tt.pid)
+			handler := NewDialogHandler(log, mockWin, mockKbd, mockCtrl)
+			err := handler.HandleConvertCompile()
 
 			assert.NoError(t, err)
 			if tt.expectEnter {
@@ -207,9 +211,10 @@ func TestDialogHandler_HandleCommentedOutSymbols(t *testing.T) {
 				WithWaitOnMonitorResults(tt.waitOnMonitorResults...)
 			mockKbd := testutil.NewMockKeyboardInjector()
 			mockCtrl := testutil.NewMockControlReader()
+			log := logger.NewNoOpLogger()
 
-			handler := NewDialogHandler(mockWin, mockKbd, mockCtrl)
-			err := handler.HandleCommentedOutSymbols(tt.pid)
+			handler := NewDialogHandler(log, mockWin, mockKbd, mockCtrl)
+			err := handler.HandleCommentedOutSymbols()
 
 			assert.NoError(t, err)
 			if tt.expectEnter {
@@ -258,9 +263,10 @@ func TestDialogHandler_WaitForCompiling(t *testing.T) {
 				WithWaitOnMonitorResults(tt.waitOnMonitorResults...)
 			mockKbd := testutil.NewMockKeyboardInjector()
 			mockCtrl := testutil.NewMockControlReader()
+			log := logger.NewNoOpLogger()
 
-			handler := NewDialogHandler(mockWin, mockKbd, mockCtrl)
-			err := handler.WaitForCompiling(tt.pid)
+			handler := NewDialogHandler(log, mockWin, mockKbd, mockCtrl)
+			err := handler.WaitForCompiling()
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -314,7 +320,7 @@ func TestDialogHandler_ParseCompileComplete(t *testing.T) {
 			name:                 "pid is zero - no action",
 			pid:                  0,
 			waitOnMonitorResults: []testutil.WaitOnMonitorResult{},
-			expectError:          false,
+			expectError:          true, // Changed from false: handler will timeout without valid PID
 			expectStats:          false,
 		},
 	}
@@ -326,9 +332,10 @@ func TestDialogHandler_ParseCompileComplete(t *testing.T) {
 				WithChildInfos(tt.childInfos...)
 			mockKbd := testutil.NewMockKeyboardInjector()
 			mockCtrl := testutil.NewMockControlReader()
+			log := logger.NewNoOpLogger()
 
-			handler := NewDialogHandler(mockWin, mockKbd, mockCtrl)
-			_, warnings, notices, errors, compileTime, err := handler.ParseCompileComplete(tt.pid)
+			handler := NewDialogHandler(log, mockWin, mockKbd, mockCtrl)
+			_, warnings, notices, errors, compileTime, err := handler.ParseCompileComplete()
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -403,9 +410,10 @@ func TestDialogHandler_ParseProgramCompilation(t *testing.T) {
 				WithChildInfos(tt.childInfos...)
 			mockKbd := testutil.NewMockKeyboardInjector()
 			mockCtrl := testutil.NewMockControlReader()
+			log := logger.NewNoOpLogger()
 
-			handler := NewDialogHandler(mockWin, mockKbd, mockCtrl)
-			warnings, notices, errors, err := handler.ParseProgramCompilation(tt.pid)
+			handler := NewDialogHandler(log, mockWin, mockKbd, mockCtrl)
+			warnings, notices, errors, err := handler.ParseProgramCompilation()
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -461,9 +469,10 @@ func TestDialogHandler_HandleConfirmation(t *testing.T) {
 			mockKbd := testutil.NewMockKeyboardInjector()
 			mockCtrl := testutil.NewMockControlReader().
 				WithFindAndClickButtonResult(tt.findAndClickResult)
+			log := logger.NewNoOpLogger()
 
-			handler := NewDialogHandler(mockWin, mockKbd, mockCtrl)
-			err := handler.HandleConfirmation(tt.pid)
+			handler := NewDialogHandler(log, mockWin, mockKbd, mockCtrl)
+			err := handler.HandleConfirmation()
 
 			assert.NoError(t, err)
 			if tt.expectClick {

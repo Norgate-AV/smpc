@@ -5,11 +5,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/Norgate-AV/smpc/internal/logger"
 	"github.com/Norgate-AV/smpc/internal/testutil"
 	"github.com/Norgate-AV/smpc/internal/windows"
 )
 
-func TestCompileWithDeps_SuccessfulCompilation(t *testing.T) {
+func TestCompiler_SuccessfulCompilation(t *testing.T) {
 	mockWin := testutil.NewMockWindowManager().
 		WithWaitOnMonitorResults(
 			// HandleOperationComplete - no dialog
@@ -38,7 +39,8 @@ func TestCompileWithDeps_SuccessfulCompilation(t *testing.T) {
 	mockCtrl := testutil.NewMockControlReader()
 	mockProc := testutil.NewMockProcessManager().WithPid(1234)
 
-	dialogHandler := NewDialogHandler(mockWin, mockKbd, mockCtrl)
+	log := logger.NewNoOpLogger()
+	dialogHandler := NewDialogHandler(log, mockWin, mockKbd, mockCtrl)
 	deps := &CompileDependencies{
 		DialogHandler: dialogHandler,
 		ProcessMgr:    mockProc,
@@ -46,13 +48,12 @@ func TestCompileWithDeps_SuccessfulCompilation(t *testing.T) {
 		Keyboard:      mockKbd,
 	}
 
+	compiler := NewCompilerWithDeps(log, deps)
 	opts := CompileOptions{
 		Hwnd:         0x9999,
 		RecompileAll: false,
 	}
-
-	result, err := CompileWithDeps(opts, deps)
-
+	result, err := compiler.Compile(opts)
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.False(t, result.HasErrors)
@@ -61,9 +62,10 @@ func TestCompileWithDeps_SuccessfulCompilation(t *testing.T) {
 	assert.Equal(t, 0, result.Notices)
 	assert.InDelta(t, 1.23, result.CompileTime, 0.01)
 
-	// Verify F12 was sent
-	assert.True(t, mockKbd.SendF12Called)
-	assert.False(t, mockKbd.SendAltF12Called)
+	// Verify F12 was sent (new SendInput method should be called)
+	assert.True(t, mockKbd.SendF12WithSendInputCalled)
+	assert.False(t, mockKbd.SendAltF12WithSendInputCalled)
+	assert.False(t, mockKbd.SendF12Called) // Old method should not be called when SendInput succeeds
 
 	// Verify window was set to foreground
 	assert.Len(t, mockWin.SetForegroundCalls, 1)
@@ -77,7 +79,7 @@ func TestCompileWithDeps_SuccessfulCompilation(t *testing.T) {
 	assert.Equal(t, "SIMPL Windows", mockWin.CloseWindowCalls[1].Title)
 }
 
-func TestCompileWithDeps_RecompileAll(t *testing.T) {
+func TestCompiler_RecompileAll(t *testing.T) {
 	mockWin := testutil.NewMockWindowManager().
 		WithWaitOnMonitorResults(
 			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleOperationComplete
@@ -97,7 +99,8 @@ func TestCompileWithDeps_RecompileAll(t *testing.T) {
 	mockCtrl := testutil.NewMockControlReader()
 	mockProc := testutil.NewMockProcessManager().WithPid(1234)
 
-	dialogHandler := NewDialogHandler(mockWin, mockKbd, mockCtrl)
+	log := logger.NewNoOpLogger()
+	dialogHandler := NewDialogHandler(log, mockWin, mockKbd, mockCtrl)
 	deps := &CompileDependencies{
 		DialogHandler: dialogHandler,
 		ProcessMgr:    mockProc,
@@ -105,23 +108,26 @@ func TestCompileWithDeps_RecompileAll(t *testing.T) {
 		Keyboard:      mockKbd,
 	}
 
+	compiler := NewCompilerWithDeps(log, deps)
+
 	opts := CompileOptions{
 		Hwnd:         0x9999,
 		RecompileAll: true, // Trigger Alt+F12 instead of F12
 	}
 
-	result, err := CompileWithDeps(opts, deps)
+	result, err := compiler.Compile(opts)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.False(t, result.HasErrors)
 
-	// Verify Alt+F12 was sent
-	assert.False(t, mockKbd.SendF12Called)
-	assert.True(t, mockKbd.SendAltF12Called)
+	// Verify Alt+F12 was sent (new SendInput method should be called)
+	assert.False(t, mockKbd.SendF12WithSendInputCalled)
+	assert.True(t, mockKbd.SendAltF12WithSendInputCalled)
+	assert.False(t, mockKbd.SendAltF12Called) // Old method should not be called when SendInput succeeds
 }
 
-func TestCompileWithDeps_WithWarnings(t *testing.T) {
+func TestCompiler_WithWarnings(t *testing.T) {
 	mockWin := testutil.NewMockWindowManager().
 		WithWaitOnMonitorResults(
 			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleOperationComplete
@@ -148,7 +154,8 @@ func TestCompileWithDeps_WithWarnings(t *testing.T) {
 	mockCtrl := testutil.NewMockControlReader()
 	mockProc := testutil.NewMockProcessManager().WithPid(1234)
 
-	dialogHandler := NewDialogHandler(mockWin, mockKbd, mockCtrl)
+	log := logger.NewNoOpLogger()
+	dialogHandler := NewDialogHandler(log, mockWin, mockKbd, mockCtrl)
 	deps := &CompileDependencies{
 		DialogHandler: dialogHandler,
 		ProcessMgr:    mockProc,
@@ -156,9 +163,11 @@ func TestCompileWithDeps_WithWarnings(t *testing.T) {
 		Keyboard:      mockKbd,
 	}
 
+	compiler := NewCompilerWithDeps(log, deps)
+
 	opts := CompileOptions{Hwnd: 0x9999}
 
-	result, err := CompileWithDeps(opts, deps)
+	result, err := compiler.Compile(opts)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
@@ -171,7 +180,7 @@ func TestCompileWithDeps_WithWarnings(t *testing.T) {
 	assert.Len(t, result.ErrorMessages, 0)
 }
 
-func TestCompileWithDeps_WithErrors(t *testing.T) {
+func TestCompiler_WithErrors(t *testing.T) {
 	mockWin := testutil.NewMockWindowManager().
 		WithWaitOnMonitorResults(
 			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleOperationComplete
@@ -198,7 +207,8 @@ func TestCompileWithDeps_WithErrors(t *testing.T) {
 	mockCtrl := testutil.NewMockControlReader()
 	mockProc := testutil.NewMockProcessManager().WithPid(1234)
 
-	dialogHandler := NewDialogHandler(mockWin, mockKbd, mockCtrl)
+	log := logger.NewNoOpLogger()
+	dialogHandler := NewDialogHandler(log, mockWin, mockKbd, mockCtrl)
 	deps := &CompileDependencies{
 		DialogHandler: dialogHandler,
 		ProcessMgr:    mockProc,
@@ -206,11 +216,13 @@ func TestCompileWithDeps_WithErrors(t *testing.T) {
 		Keyboard:      mockKbd,
 	}
 
+	compiler := NewCompilerWithDeps(log, deps)
+
 	opts := CompileOptions{Hwnd: 0x9999}
 
-	result, err := CompileWithDeps(opts, deps)
+	result, err := compiler.Compile(opts)
 
-	// CompileWithDeps returns an error when there are compile errors
+	// Compile returns an error when there are compile errors
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "compilation failed")
 	assert.NotNil(t, result)
@@ -221,7 +233,7 @@ func TestCompileWithDeps_WithErrors(t *testing.T) {
 	assert.Len(t, result.ErrorMessages, 3)
 }
 
-func TestCompileWithDeps_IncompleteSymbols(t *testing.T) {
+func TestCompiler_IncompleteSymbols(t *testing.T) {
 	mockWin := testutil.NewMockWindowManager().
 		WithWaitOnMonitorResults(
 			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleOperationComplete
@@ -235,7 +247,8 @@ func TestCompileWithDeps_IncompleteSymbols(t *testing.T) {
 	mockCtrl := testutil.NewMockControlReader()
 	mockProc := testutil.NewMockProcessManager().WithPid(1234)
 
-	dialogHandler := NewDialogHandler(mockWin, mockKbd, mockCtrl)
+	log := logger.NewNoOpLogger()
+	dialogHandler := NewDialogHandler(log, mockWin, mockKbd, mockCtrl)
 	deps := &CompileDependencies{
 		DialogHandler: dialogHandler,
 		ProcessMgr:    mockProc,
@@ -243,46 +256,18 @@ func TestCompileWithDeps_IncompleteSymbols(t *testing.T) {
 		Keyboard:      mockKbd,
 	}
 
+	compiler := NewCompilerWithDeps(log, deps)
+
 	opts := CompileOptions{Hwnd: 0x9999}
 
-	result, err := CompileWithDeps(opts, deps)
+	result, err := compiler.Compile(opts)
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, err.Error(), "incomplete symbols")
 }
 
-func TestCompileWithDeps_KeystrokeFailure(t *testing.T) {
-	mockWin := testutil.NewMockWindowManager().
-		WithWaitOnMonitorResults(
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleOperationComplete
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleIncompleteSymbols
-		)
-
-	mockKbd := testutil.NewMockKeyboardInjector().
-		WithSendF12Result(false) // Simulate keystroke failure
-
-	mockCtrl := testutil.NewMockControlReader()
-	mockProc := testutil.NewMockProcessManager().WithPid(1234)
-
-	dialogHandler := NewDialogHandler(mockWin, mockKbd, mockCtrl)
-	deps := &CompileDependencies{
-		DialogHandler: dialogHandler,
-		ProcessMgr:    mockProc,
-		WindowMgr:     mockWin,
-		Keyboard:      mockKbd,
-	}
-
-	opts := CompileOptions{Hwnd: 0x9999}
-
-	result, err := CompileWithDeps(opts, deps)
-
-	assert.Error(t, err)
-	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "keystroke")
-}
-
-func TestCompileWithDeps_CompileDialogTimeout(t *testing.T) {
+func TestCompiler_CompileDialogTimeout(t *testing.T) {
 	mockWin := testutil.NewMockWindowManager().
 		WithWaitOnMonitorResults(
 			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleOperationComplete
@@ -296,7 +281,8 @@ func TestCompileWithDeps_CompileDialogTimeout(t *testing.T) {
 	mockCtrl := testutil.NewMockControlReader()
 	mockProc := testutil.NewMockProcessManager().WithPid(1234)
 
-	dialogHandler := NewDialogHandler(mockWin, mockKbd, mockCtrl)
+	log := logger.NewNoOpLogger()
+	dialogHandler := NewDialogHandler(log, mockWin, mockKbd, mockCtrl)
 	deps := &CompileDependencies{
 		DialogHandler: dialogHandler,
 		ProcessMgr:    mockProc,
@@ -304,16 +290,18 @@ func TestCompileWithDeps_CompileDialogTimeout(t *testing.T) {
 		Keyboard:      mockKbd,
 	}
 
+	compiler := NewCompilerWithDeps(log, deps)
+
 	opts := CompileOptions{Hwnd: 0x9999}
 
-	result, err := CompileWithDeps(opts, deps)
+	result, err := compiler.Compile(opts)
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, err.Error(), "Compile Complete")
 }
 
-func TestCompileWithDeps_NoPid(t *testing.T) {
+func TestCompiler_NoPid(t *testing.T) {
 	// When PID is 0, dialog monitoring should be skipped but compilation should still proceed
 	mockWin := testutil.NewMockWindowManager().
 		WithWaitOnMonitorResults(
@@ -328,7 +316,8 @@ func TestCompileWithDeps_NoPid(t *testing.T) {
 	mockCtrl := testutil.NewMockControlReader()
 	mockProc := testutil.NewMockProcessManager().WithPid(0) // PID not available
 
-	dialogHandler := NewDialogHandler(mockWin, mockKbd, mockCtrl)
+	log := logger.NewNoOpLogger()
+	dialogHandler := NewDialogHandler(log, mockWin, mockKbd, mockCtrl)
 	deps := &CompileDependencies{
 		DialogHandler: dialogHandler,
 		ProcessMgr:    mockProc,
@@ -336,19 +325,21 @@ func TestCompileWithDeps_NoPid(t *testing.T) {
 		Keyboard:      mockKbd,
 	}
 
+	compiler := NewCompilerWithDeps(log, deps)
+
 	opts := CompileOptions{Hwnd: 0x9999}
 
-	result, err := CompileWithDeps(opts, deps)
+	result, err := compiler.Compile(opts)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.False(t, result.HasErrors)
 
-	// Verify F12 was still sent even without PID
-	assert.True(t, mockKbd.SendF12Called)
+	// Verify F12 was still sent even without PID (new SendInput method should be called)
+	assert.True(t, mockKbd.SendF12WithSendInputCalled)
 }
 
-func TestCompileWithDeps_WithSavePrompts(t *testing.T) {
+func TestCompiler_WithSavePrompts(t *testing.T) {
 	mockWin := testutil.NewMockWindowManager().
 		WithWaitOnMonitorResults(
 			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleOperationComplete
@@ -368,7 +359,8 @@ func TestCompileWithDeps_WithSavePrompts(t *testing.T) {
 	mockCtrl := testutil.NewMockControlReader()
 	mockProc := testutil.NewMockProcessManager().WithPid(1234)
 
-	dialogHandler := NewDialogHandler(mockWin, mockKbd, mockCtrl)
+	log := logger.NewNoOpLogger()
+	dialogHandler := NewDialogHandler(log, mockWin, mockKbd, mockCtrl)
 	deps := &CompileDependencies{
 		DialogHandler: dialogHandler,
 		ProcessMgr:    mockProc,
@@ -376,9 +368,11 @@ func TestCompileWithDeps_WithSavePrompts(t *testing.T) {
 		Keyboard:      mockKbd,
 	}
 
+	compiler := NewCompilerWithDeps(log, deps)
+
 	opts := CompileOptions{Hwnd: 0x9999}
 
-	result, err := CompileWithDeps(opts, deps)
+	result, err := compiler.Compile(opts)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
@@ -386,22 +380,4 @@ func TestCompileWithDeps_WithSavePrompts(t *testing.T) {
 
 	// Verify Enter was sent twice (for save prompts)
 	assert.True(t, mockKbd.SendEnterCalled)
-}
-
-func TestCompile_BackwardCompatibility(t *testing.T) {
-	// This test verifies that the original Compile() function still works
-	// It will use real dependencies, so we just verify it doesn't panic
-	opts := CompileOptions{
-		Hwnd:         0, // Invalid hwnd won't actually compile, but should handle gracefully
-		RecompileAll: false,
-	}
-
-	// This should not panic even with invalid opts
-	// The function will fail at various steps but shouldn't crash
-	result, err := Compile(opts)
-
-	// We expect an error since we're not providing valid SIMPL Windows handle
-	// but the important thing is it didn't panic
-	_ = result
-	_ = err
 }

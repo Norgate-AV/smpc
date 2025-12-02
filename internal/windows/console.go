@@ -1,7 +1,6 @@
 package windows
 
 import (
-	"log/slog"
 	"syscall"
 )
 
@@ -27,11 +26,9 @@ func SetConsoleCtrlHandler(handler ConsoleCtrlHandler) error {
 	)
 
 	if ret == 0 {
-		slog.Error("SetConsoleCtrlHandler failed", "error", err)
 		return err
 	}
 
-	slog.Debug("Windows console control handler registered")
 	return nil
 }
 
@@ -40,7 +37,7 @@ func consoleCtrlHandlerCallback(ctrlType uint32) uintptr {
 	if globalHandler != nil {
 		return globalHandler(ctrlType)
 	}
-	
+
 	return 0 // FALSE - let default handler process it
 }
 
