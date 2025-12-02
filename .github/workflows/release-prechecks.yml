@@ -1,0 +1,69 @@
+name: Release Pre-checks
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  goreleaser-test:
+    name: GoReleaser Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Install dependencies
+        run: make deps
+
+      - name: Install GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          install-only: true
+
+      - name: Setup Rust Toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Cache Rust tools
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install Rust tools
+        run: |
+          if ! command -v git-cliff &> /dev/null
+          then
+              cargo install git-cliff --force
+          fi
+
+          if ! command -v typos &> /dev/null
+          then
+              cargo install typos-cli --force
+          fi
+
+      - name: Run GoReleaser test
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SCOOP_NORGATEAV_CRESTRON: ${{ secrets.SCOOP_NORGATEAV_CRESTRON }}
+        run: |
+          make goreleaser-test
