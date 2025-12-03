@@ -50,7 +50,7 @@ func ShellExecute(hwnd uintptr, verb, file, args, cwd string, showCmd int) error
 
 	// ShellExecute returns a value > 32 on success
 	if ret <= 32 {
-		return fmt.Errorf("ShellExecute failed with error code: %d", ret)
+		return fmt.Errorf("shell execute failed with error code: %d", ret)
 	}
 
 	return nil
@@ -105,12 +105,12 @@ func ShellExecuteEx(hwnd uintptr, verb, file, args, cwd string, showCmd int) (ui
 	// Call ShellExecuteExW
 	ret, _, _ := procShellExecuteEx.Call(uintptr(unsafe.Pointer(&sei)))
 	if ret == 0 {
-		return 0, fmt.Errorf("ShellExecuteEx failed")
+		return 0, fmt.Errorf("shell execute ex failed")
 	}
 
 	// Get process ID from the process handle
 	if sei.HProcess == 0 {
-		return 0, fmt.Errorf("ShellExecuteEx did not return a process handle")
+		return 0, fmt.Errorf("shell execute ex did not return a process handle")
 	}
 
 	pid, _, _ := procGetProcessId.Call(sei.HProcess)
@@ -180,7 +180,7 @@ func TerminateProcess(pid uint32) error {
 	)
 
 	if hProcess == 0 {
-		return fmt.Errorf("failed to open process: %v", err)
+		return fmt.Errorf("failed to open process: %w", err)
 	}
 
 	defer func() { _, _, _ = ProcCloseHandle.Call(hProcess) }()
@@ -188,7 +188,7 @@ func TerminateProcess(pid uint32) error {
 	// Terminate the process
 	ret, _, err := procTerminateProcess.Call(hProcess, uintptr(1))
 	if ret == 0 {
-		return fmt.Errorf("failed to terminate process: %v", err)
+		return fmt.Errorf("failed to terminate process: %w", err)
 	}
 
 	return nil
