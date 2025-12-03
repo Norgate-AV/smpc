@@ -35,11 +35,22 @@ func (c *Client) GetPid() uint32 {
 // If targetPid is 0, it will search for any smpwin.exe process (legacy behavior)
 // The seenWindows map tracks windows that have already been logged to avoid repetitive output
 func (c *Client) FindWindow(targetPid uint32, debug bool) (uintptr, string) {
-	return c.findWindowWithTracking(targetPid, debug, nil)
+	result := c.findWindowWithTracking(targetPid, debug, nil)
+	return result.mainHwnd, result.mainTitle
+}
+
+// windowSearchResult contains the results of a window search
+type windowSearchResult struct {
+	mainHwnd    uintptr
+	mainTitle   string
+	foundSplash bool
 }
 
 // findWindowWithTracking is the internal implementation that supports window tracking
-func (c *Client) findWindowWithTracking(targetPid uint32, debug bool, seenWindows map[uintptr]bool) (uintptr, string) {
+// Returns the main window handle and title if found, or indicates if only splash screen was detected
+func (c *Client) findWindowWithTracking(targetPid uint32, debug bool, seenWindows map[uintptr]bool) windowSearchResult {
+	result := windowSearchResult{}
+
 	// If no target PID specified, search for any smpwin.exe process
 	if targetPid == 0 {
 		targetPid = findProcessByName("smpwin.exe")
@@ -49,7 +60,7 @@ func (c *Client) findWindowWithTracking(targetPid uint32, debug bool, seenWindow
 				c.log.Debug("smpwin.exe process not found")
 			}
 
-			return 0, ""
+			return result
 		}
 	}
 
@@ -109,15 +120,17 @@ func (c *Client) findWindowWithTracking(targetPid uint32, debug bool, seenWindow
 			c.log.Debug("Found main window", slog.String("title", mainWindow.Title))
 		}
 
-		return mainWindow.Hwnd, mainWindow.Title
+		result.mainHwnd = mainWindow.Hwnd
+		result.mainTitle = mainWindow.Title
+		return result
 	}
 
-	// If we only found the generic splash screen, return 0 to keep waiting
+	// If we only found the generic splash screen, indicate it but return no handle
 	if splashWindow.Hwnd != 0 {
-		return 0, ""
+		result.foundSplash = true
 	}
 
-	return 0, ""
+	return result
 }
 
 // WaitForReady waits for a window to become fully responsive
@@ -162,23 +175,22 @@ func (c *Client) WaitForReady(hwnd uintptr, timeout time.Duration) bool {
 func (c *Client) WaitForAppear(targetPid uint32, timeout time.Duration) (uintptr, bool) {
 	deadline := time.Now().Add(timeout)
 	seenWindows := make(map[uintptr]bool) // Track windows we've already logged
-	loggedSplashOnly := false             // Track if we've logged "only splash screen" message
+	loggedSplashOnly := false             // Track if we've logged "splash screen detected" message
 
 	c.log.Debug("Searching for window", slog.Uint64("pid", uint64(targetPid)))
 
 	for time.Now().Before(deadline) {
 		// Check for the main SIMPL Windows window, passing seenWindows for tracking
-		hwnd, title := c.findWindowWithTracking(targetPid, true, seenWindows)
+		result := c.findWindowWithTracking(targetPid, true, seenWindows)
 
-		if hwnd != 0 {
-			c.log.Debug("Found main SIMPL Windows window", slog.String("title", title))
-			return hwnd, true
+		if result.mainHwnd != 0 {
+			c.log.Debug("Found main SIMPL Windows window", slog.String("title", result.mainTitle))
+			return result.mainHwnd, true
 		}
 
-		// If we haven't found the main window yet and haven't logged it, log once
-		// TODO: Is this needed?
-		if !loggedSplashOnly {
-			c.log.Debug("Only found splash screen, continuing to wait")
+		// If we detected a splash screen but no main window yet, log it once
+		if result.foundSplash && !loggedSplashOnly {
+			c.log.Debug("Found splash screen, continuing to wait for main window")
 			loggedSplashOnly = true
 		}
 
@@ -186,10 +198,10 @@ func (c *Client) WaitForAppear(targetPid uint32, timeout time.Duration) (uintptr
 	}
 
 	c.log.Debug("Timeout reached, performing final detailed check")
-	hwnd, title := c.findWindowWithTracking(targetPid, true, seenWindows)
-	if hwnd != 0 {
-		c.log.Debug("Found window at timeout", slog.String("title", title))
-		return hwnd, true
+	result := c.findWindowWithTracking(targetPid, true, seenWindows)
+	if result.mainHwnd != 0 {
+		c.log.Debug("Found window at timeout", slog.String("title", result.mainTitle))
+		return result.mainHwnd, true
 	}
 
 	return 0, false
