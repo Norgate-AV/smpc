@@ -49,7 +49,7 @@ smpc path/to/your/program.smw
 The tool will:
 
 1. Launch SIMPL Windows with the specified file
-2. Automatically trigger compilation (F12)
+2. Automatically trigger compilation
 3. Handle any dialog prompts
 4. Parse and display compilation results (errors, warnings, notices)
 5. Close SIMPL Windows automatically
@@ -69,32 +69,38 @@ This tool requires elevated permissions to:
 
 ### Interactive Use
 
-When you run `smpc`, it will automatically:
+For the best experience, run `smpc` from an administrator terminal. This allows you to see the
+compilation output and logs directly in your terminal.
+
+If you run `smpc` from a non-elevated terminal, it will automatically:
 
 - Check if it's running with administrator privileges
 - If not, display a UAC (User Account Control) prompt to request elevation
-- Relaunch itself with the required permissions
+- Relaunch itself with the required permissions in a new elevated terminal window
 
-You may see a UAC prompt asking "Do you want to allow this app to make changes to your device?" - click **Yes** to continue.
+You may see a UAC prompt asking "Do you want to allow this app to make changes to your device?" -
+click **Yes** to continue.
+
+**Note**: When auto-elevation occurs, the new terminal window will close immediately after
+compilation completes. You can view the compilation logs afterward using `smpc --logs`.
 
 ### CI/CD Environments
 
-For automated builds in CI/CD pipelines (GitHub Actions, Jenkins, etc.), UAC prompts will block execution. You must either:
+For automated builds in CI/CD pipelines (GitHub Actions, Jenkins, etc.), UAC prompts will block
+execution. There are two approaches to handle this:
 
-- **Run the CI agent/runner with administrator privileges**, or
-- **Disable UAC** on the build machine (not recommended for production systems)
+#### Option 1: Run CI Agent with Administrator Privileges
 
-To disable UAC temporarily for testing:
+Configure your CI agent or runner to execute with administrator privileges. This allows UAC prompts
+to be automatically approved.
 
-```pwsh
-# Disable UAC (requires restart)
-Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name "EnableLUA" -Value 0
+#### Option 2: Disable UAC
 
-# Re-enable UAC (requires restart)
-Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name "EnableLUA" -Value 1
-```
+Disable UAC on the build machine to prevent interactive prompts. Refer to your Windows
+documentation or system administrator for the appropriate method for your environment.
 
-**Note**: Always ensure your CI/CD runner is executing with the necessary privileges before running `smpc`.
+Both approaches are necessary workarounds for automating SIMPL Windows compilation, which requires
+elevated privileges to interact with the application's UI.
 
 ## LICENSE
 
