@@ -32,7 +32,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Build optimized cross-platform binary
+      - name: Build optimized binary
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
@@ -48,13 +48,13 @@ jobs:
 
           CGO_ENABLED=0 go build \
             -tags "netgo osusergo" \
-            -ldflags "-s -w -X github.com/Norgate-AV/spc/internal/version.Version=${VERSION} -X github.com/Norgate-AV/spc/internal/version.Commit=${COMMIT} -X github.com/Norgate-AV/spc/internal/version.BuildTime=${BUILD_TIME}" \
-            -o "spc${EXT}" \
+            -ldflags "-s -w -X github.com/Norgate-AV/smpc/internal/version.Version=${VERSION} -X github.com/Norgate-AV/smpc/internal/version.Commit=${COMMIT} -X github.com/Norgate-AV/smpc/internal/version.BuildTime=${BUILD_TIME}" \
+            -o "smpc${EXT}" \
             .
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: spc-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: spc*
+          name: smpc-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: smpc*
           retention-days: 30

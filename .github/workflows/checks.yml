@@ -28,7 +28,7 @@ jobs:
             ${{ runner.os }}-go-
 
       - name: Install dependencies
-        run: make deps
+        run: go mod download
 
       - name: Run linting
         run: make lint
@@ -46,7 +46,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Install dependencies
-        run: make deps
+        run: go mod download
 
       - name: Run vulnerability check
         run: make vet
@@ -79,7 +79,7 @@ jobs:
             ${{ runner.os }}-go-${{ matrix.go-version }}-
 
       - name: Install dependencies
-        run: make deps
+        run: go mod download
 
       - name: Run tests with coverage
         run: make test-coverage
