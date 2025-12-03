@@ -11,6 +11,17 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
+const (
+	// DefaultLogMaxSize is the default maximum size in megabytes before log rotation
+	DefaultLogMaxSize = 10
+
+	// DefaultLogMaxBackups is the default number of old log files to retain
+	DefaultLogMaxBackups = 3
+
+	// DefaultLogMaxAge is the default maximum number of days to retain old log files
+	DefaultLogMaxAge = 28
+)
+
 // LoggerInterface defines the logging methods
 type LoggerInterface interface {
 	Debug(msg string, args ...any)
@@ -82,15 +93,15 @@ type Logger struct {
 func NewLogger(opts LoggerOptions) (*Logger, error) {
 	// Set defaults
 	if opts.MaxSize == 0 {
-		opts.MaxSize = 10
+		opts.MaxSize = DefaultLogMaxSize
 	}
 
 	if opts.MaxBackups == 0 {
-		opts.MaxBackups = 3
+		opts.MaxBackups = DefaultLogMaxBackups
 	}
 
 	if opts.MaxAge == 0 {
-		opts.MaxAge = 28
+		opts.MaxAge = DefaultLogMaxAge
 	}
 
 	// Get log path and ensure directory exists
