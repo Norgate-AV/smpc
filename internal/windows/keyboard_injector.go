@@ -8,6 +8,7 @@ import (
 	"unsafe"
 
 	"github.com/Norgate-AV/smpc/internal/logger"
+	"github.com/Norgate-AV/smpc/internal/timeouts"
 )
 
 // keyboardInjector implements the KeyboardInjector interface
@@ -30,7 +31,7 @@ func (k *keyboardInjector) SendF12() {
 	k.log.Debug("Sending F12 KEYDOWN")
 	_, _, _ = procKeybd_event.Call(vkCode, 0, 0x1, 0) // KEYEVENTF_EXTENDEDKEY
 
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(timeouts.KeystrokeDelay)
 
 	k.log.Debug("Sending F12 KEYUP")
 	_, _, _ = procKeybd_event.Call(vkCode, 0, 0x1|0x2, 0) // KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP
@@ -46,15 +47,15 @@ func (k *keyboardInjector) SendAltF12() {
 	// Note: keybd_event has void return type, no error checking needed
 	k.log.Debug("Sending Alt KEYDOWN")
 	_, _, _ = procKeybd_event.Call(vkAlt, 0, 0x1, 0) // KEYEVENTF_EXTENDEDKEY
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(timeouts.KeystrokeDelay)
 
 	k.log.Debug("Sending F12 KEYDOWN")
 	_, _, _ = procKeybd_event.Call(vkF12, 0, 0x1, 0) // KEYEVENTF_EXTENDEDKEY
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(timeouts.KeystrokeDelay)
 
 	k.log.Debug("Sending F12 KEYUP")
 	_, _, _ = procKeybd_event.Call(vkF12, 0, 0x1|0x2, 0) // KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(timeouts.KeystrokeDelay)
 
 	k.log.Debug("Sending Alt KEYUP")
 	_, _, _ = procKeybd_event.Call(vkAlt, 0, 0x1|0x2, 0) // KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP
@@ -68,7 +69,7 @@ func (k *keyboardInjector) SendEnter() {
 	// Note: keybd_event has void return type, no error checking needed
 	k.log.Debug("Sending Enter KEYDOWN")
 	_, _, _ = procKeybd_event.Call(vkCode, 0, 0x1, 0)
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(timeouts.KeystrokeDelay)
 
 	k.log.Debug("Sending Enter KEYUP")
 	_, _, _ = procKeybd_event.Call(vkCode, 0, 0x1|0x2, 0)
@@ -94,7 +95,7 @@ func (k *keyboardInjector) SendF12ToWindow(hwnd uintptr) bool {
 	k.log.Debug("Trying SendMessage for F12")
 	ret, _, _ := procSendMessageW.Call(hwnd, WM_KEYDOWN, VK_F12, lParamDown)
 	k.log.Debug("SendMessage WM_KEYDOWN returned", slog.Uint64("ret", uint64(ret)))
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(timeouts.KeystrokeDelay)
 
 	ret, _, _ = procSendMessageW.Call(hwnd, WM_KEYUP, VK_F12, lParamUp)
 	k.log.Debug("SendMessage WM_KEYUP returned", slog.Uint64("ret", uint64(ret)))
@@ -126,17 +127,17 @@ func (k *keyboardInjector) SendAltF12ToWindow(hwnd uintptr) bool {
 	// Send Alt down
 	k.log.Debug("Sending WM_SYSKEYDOWN (Alt)")
 	_, _, _ = procSendMessageW.Call(hwnd, WM_SYSKEYDOWN, VK_MENU, lParamAltDown)
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(timeouts.KeystrokeDelay)
 
 	// Send F12 down
 	k.log.Debug("Sending WM_SYSKEYDOWN (F12)")
 	_, _, _ = procSendMessageW.Call(hwnd, WM_SYSKEYDOWN, VK_F12, lParamF12Down)
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(timeouts.KeystrokeDelay)
 
 	// Send F12 up
 	k.log.Debug("Sending WM_SYSKEYUP (F12)")
 	_, _, _ = procSendMessageW.Call(hwnd, WM_SYSKEYUP, VK_F12, lParamF12Up)
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(timeouts.KeystrokeDelay)
 
 	// Send Alt up
 	k.log.Debug("Sending WM_SYSKEYUP (Alt)")

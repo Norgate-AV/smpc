@@ -8,6 +8,7 @@ import (
 
 	"github.com/Norgate-AV/smpc/internal/interfaces"
 	"github.com/Norgate-AV/smpc/internal/logger"
+	"github.com/Norgate-AV/smpc/internal/timeouts"
 	"github.com/Norgate-AV/smpc/internal/windows"
 )
 
@@ -56,17 +57,17 @@ func (dh *DialogHandler) waitForDialog(title string, timeout time.Duration) (win
 }
 
 func (dh *DialogHandler) HandleOperationComplete() error {
-	ev, ok := dh.waitForDialog("Operation Complete", 3*time.Second)
+	ev, ok := dh.waitForDialog("Operation Complete", timeouts.DialogOperationCompleteTimeout)
 	if ok {
 		dh.windowMgr.CloseWindow(ev.Hwnd, ev.Title)
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(timeouts.WindowMessageDelay)
 	}
 
 	return nil
 }
 
 func (dh *DialogHandler) HandleIncompleteSymbols() error {
-	ev, ok := dh.waitForDialog("Incomplete Symbols", 2*time.Second)
+	ev, ok := dh.waitForDialog("Incomplete Symbols", timeouts.DialogIncompleteSymbolsTimeout)
 	if ok {
 		dh.log.Error("ERROR: Incomplete Symbols detected", slog.String("title", ev.Title))
 		dh.log.Info("The program contains incomplete symbols and cannot be compiled.")
@@ -88,10 +89,10 @@ func (dh *DialogHandler) HandleIncompleteSymbols() error {
 }
 
 func (dh *DialogHandler) HandleConvertCompile() error {
-	ev, ok := dh.waitForDialog("Convert/Compile", 5*time.Second)
+	ev, ok := dh.waitForDialog("Convert/Compile", timeouts.DialogConvertCompileTimeout)
 	if ok {
 		_ = dh.windowMgr.SetForeground(ev.Hwnd)
-		time.Sleep(300 * time.Millisecond)
+		time.Sleep(timeouts.DialogResponseDelay)
 		dh.keyboard.SendEnter()
 		dh.log.Info("Auto-confirmed save prompt")
 	}
@@ -100,10 +101,10 @@ func (dh *DialogHandler) HandleConvertCompile() error {
 }
 
 func (dh *DialogHandler) HandleCommentedOutSymbols() error {
-	ev, ok := dh.waitForDialog("Commented out Symbols and/or Devices", 5*time.Second)
+	ev, ok := dh.waitForDialog("Commented out Symbols and/or Devices", timeouts.DialogCommentedSymbolsTimeout)
 	if ok {
 		_ = dh.windowMgr.SetForeground(ev.Hwnd)
-		time.Sleep(300 * time.Millisecond)
+		time.Sleep(timeouts.DialogResponseDelay)
 		dh.keyboard.SendEnter()
 		dh.log.Info("Auto-confirmed commented symbols dialog")
 	}
@@ -112,7 +113,7 @@ func (dh *DialogHandler) HandleCommentedOutSymbols() error {
 }
 
 func (dh *DialogHandler) WaitForCompiling() error {
-	_, ok := dh.waitForDialog("Compiling...", 30*time.Second)
+	_, ok := dh.waitForDialog("Compiling...", timeouts.DialogCompilingTimeout)
 	if !ok {
 		dh.log.Warn("Did not detect 'Compiling...' dialog within timeout")
 	}
@@ -162,7 +163,7 @@ func (dh *DialogHandler) ParseCompileComplete() (hwnd uintptr, warnings, notices
 }
 
 func (dh *DialogHandler) ParseProgramCompilation() (warnings, notices, errors []string, err error) {
-	ev, ok := dh.waitForDialog("Program Compilation", 10*time.Second)
+	ev, ok := dh.waitForDialog("Program Compilation", timeouts.DialogProgramCompilationTimeout)
 	if !ok {
 		return nil, nil, nil, nil
 	}
@@ -189,17 +190,17 @@ func (dh *DialogHandler) ParseProgramCompilation() (warnings, notices, errors []
 }
 
 func (dh *DialogHandler) HandleConfirmation() error {
-	ev, ok := dh.waitForDialog("Confirmation", 2*time.Second)
+	ev, ok := dh.waitForDialog("Confirmation", timeouts.DialogConfirmationTimeout)
 	if ok {
 		dh.log.Info("Handling confirmation dialog")
 
 		if dh.controlReader.FindAndClickButton(ev.Hwnd, "&No") {
 			dh.log.Debug("Successfully clicked 'No' button")
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(timeouts.WindowMessageDelay)
 		} else {
 			dh.log.Warn("Could not find 'No' button, trying to close dialog")
 			dh.windowMgr.CloseWindow(ev.Hwnd, "Confirmation dialog")
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(timeouts.WindowMessageDelay)
 		}
 	}
 

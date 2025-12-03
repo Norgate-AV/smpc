@@ -15,6 +15,7 @@ import (
 	"github.com/Norgate-AV/smpc/internal/compiler"
 	"github.com/Norgate-AV/smpc/internal/logger"
 	"github.com/Norgate-AV/smpc/internal/simpl"
+	"github.com/Norgate-AV/smpc/internal/timeouts"
 	"github.com/Norgate-AV/smpc/internal/version"
 	"github.com/Norgate-AV/smpc/internal/windows"
 )
@@ -201,7 +202,7 @@ func setupSignalHandlers(ctx *ExecutionContext) {
 func waitForWindowReady(simplClient *simpl.Client, pid uint32, log logger.LoggerInterface) (uintptr, error) {
 	log.Info("Waiting for SIMPL Windows to fully launch...")
 
-	hwnd, found := simplClient.WaitForAppear(pid, 3*time.Minute)
+	hwnd, found := simplClient.WaitForAppear(pid, timeouts.WindowAppearTimeout)
 	if !found {
 		log.Error("Timeout waiting for window to appear after 3 minutes")
 		log.Info("Forcing SIMPL Windows to terminate due to timeout")
@@ -212,14 +213,14 @@ func waitForWindowReady(simplClient *simpl.Client, pid uint32, log logger.Logger
 	log.Debug("Window appeared", slog.Uint64("hwnd", uint64(hwnd)))
 
 	// Wait for the window to be fully ready and responsive
-	if !simplClient.WaitForReady(hwnd, 30*time.Second) {
+	if !simplClient.WaitForReady(hwnd, timeouts.WindowReadyTimeout) {
 		log.Error("Window not responding properly")
 		return 0, fmt.Errorf("window appeared but is not responding properly")
 	}
 
 	// Small extra delay to allow UI to finish settling
 	log.Debug("Waiting a few extra seconds for UI to settle...")
-	time.Sleep(5 * time.Second)
+	time.Sleep(timeouts.UISettlingDelay)
 
 	return hwnd, nil
 }

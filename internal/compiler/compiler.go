@@ -8,6 +8,7 @@ import (
 	"github.com/Norgate-AV/smpc/internal/interfaces"
 	"github.com/Norgate-AV/smpc/internal/logger"
 	"github.com/Norgate-AV/smpc/internal/simpl"
+	"github.com/Norgate-AV/smpc/internal/timeouts"
 	"github.com/Norgate-AV/smpc/internal/windows"
 )
 
@@ -112,7 +113,7 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 	_ = c.deps.WindowMgr.SetForeground(opts.Hwnd)
 
 	c.log.Debug("Waiting for window to receive focus...")
-	time.Sleep(1 * time.Second)
+	time.Sleep(timeouts.FocusVerificationDelay)
 
 	// Verify the window is in the foreground before sending keystrokes
 	c.log.Debug("Verifying foreground window")
@@ -120,7 +121,7 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 	if !verified {
 		c.log.Warn("Window verification failed, attempting to set foreground again")
 		_ = c.deps.WindowMgr.SetForeground(opts.Hwnd)
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(timeouts.WindowMessageDelay)
 		verified = c.deps.WindowMgr.VerifyForegroundWindow(opts.Hwnd, pid)
 		if !verified {
 			c.log.Error("Could not verify correct window is in foreground - keystrokes may not reach intended target")
@@ -246,7 +247,7 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 	// First, close the "Compile Complete" dialog if it's still open
 	if compileCompleteHwnd != 0 {
 		c.deps.WindowMgr.CloseWindow(compileCompleteHwnd, "Compile Complete dialog")
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(timeouts.StabilityCheckInterval)
 	}
 
 	// Handle confirmation dialog when closing
@@ -259,7 +260,7 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 	// Now close the main SIMPL Windows application
 	if opts.Hwnd != 0 {
 		c.deps.WindowMgr.CloseWindow(opts.Hwnd, "SIMPL Windows")
-		time.Sleep(1 * time.Second)
+		time.Sleep(timeouts.CleanupDelay)
 		c.log.Info("SIMPL Windows closed")
 	}
 

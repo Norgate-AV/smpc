@@ -9,6 +9,7 @@ import (
 	"unsafe"
 
 	"github.com/Norgate-AV/smpc/internal/logger"
+	"github.com/Norgate-AV/smpc/internal/timeouts"
 )
 
 // windowManager implements the WindowManager interface
@@ -25,7 +26,7 @@ func newWindowManager(log logger.LoggerInterface) *windowManager {
 func (w *windowManager) CloseWindow(hwnd uintptr, title string) {
 	w.log.Debug("Closing window", slog.String("title", title))
 	_, _, _ = procPostMessageW.Call(hwnd, WM_CLOSE, 0, 0)
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(timeouts.WindowMessageDelay)
 }
 
 // SetForeground brings a window to the foreground
@@ -43,7 +44,7 @@ func (w *windowManager) SetForeground(hwnd uintptr) bool {
 	w.log.Debug("SetForegroundWindow succeeded")
 
 	// Give it a moment and verify
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(timeouts.WindowMessageDelay)
 	fgHwnd, _, _ := procGetForegroundWindow.Call()
 	if fgHwnd == hwnd {
 		w.log.Debug("Window confirmed in foreground")

@@ -7,6 +7,7 @@ import (
 	"unsafe"
 
 	"github.com/Norgate-AV/smpc/internal/logger"
+	"github.com/Norgate-AV/smpc/internal/timeouts"
 	"github.com/Norgate-AV/smpc/internal/windows"
 )
 
@@ -135,7 +136,7 @@ func (c *Client) WaitForReady(hwnd uintptr, timeout time.Duration) bool {
 			// Window is responsive, wait a bit more to ensure stability
 			consecutiveResponses := 0
 			for range 3 {
-				time.Sleep(500 * time.Millisecond)
+				time.Sleep(timeouts.StabilityCheckInterval)
 				if c.isWindowResponsive(hwnd, false) {
 					consecutiveResponses++
 				}
@@ -147,7 +148,7 @@ func (c *Client) WaitForReady(hwnd uintptr, timeout time.Duration) bool {
 			}
 		}
 
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(timeouts.StatePollingInterval)
 		elapsed++
 	}
 
@@ -180,7 +181,7 @@ func (c *Client) WaitForAppear(targetPid uint32, timeout time.Duration) (uintptr
 			loggedSplashOnly = true
 		}
 
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(timeouts.StatePollingInterval)
 	}
 
 	c.log.Debug("Timeout reached, performing final detailed check")
@@ -202,7 +203,7 @@ func (c *Client) Cleanup(hwnd uintptr) {
 
 	// Try to close gracefully
 	c.win.Window.CloseWindow(hwnd, "SIMPL Windows")
-	time.Sleep(1 * time.Second)
+	time.Sleep(timeouts.CleanupDelay)
 
 	// Verify the window is actually closed - check any smpwin.exe process
 	testHwnd, _ := c.FindWindow(0, false)
@@ -262,7 +263,7 @@ func (c *Client) StartMonitoring() func() {
 			default:
 				pid = c.GetPid()
 				if pid == 0 {
-					time.Sleep(100 * time.Millisecond)
+					time.Sleep(timeouts.StatePollingInterval)
 				}
 			}
 		}
@@ -271,10 +272,10 @@ func (c *Client) StartMonitoring() func() {
 		windows.MonitorCh = make(chan windows.WindowEvent, 64)
 		if pid == 0 {
 			c.log.Debug("Window monitor falling back to all processes (SIMPL PID not found yet)")
-			c.win.Monitor.StartWindowMonitor(0, 500*time.Millisecond)
+			c.win.Monitor.StartWindowMonitor(0, timeouts.MonitorPollingInterval)
 		} else {
 			c.log.Debug("Window monitor targeting SIMPL PID", slog.Uint64("pid", uint64(pid)))
-			c.win.Monitor.StartWindowMonitor(pid, 500*time.Millisecond)
+			c.win.Monitor.StartWindowMonitor(pid, timeouts.MonitorPollingInterval)
 		}
 
 		// Wait for done signal

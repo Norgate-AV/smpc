@@ -15,16 +15,8 @@ import (
 
 	"github.com/Norgate-AV/smpc/internal/compiler"
 	"github.com/Norgate-AV/smpc/internal/simpl"
+	"github.com/Norgate-AV/smpc/internal/timeouts"
 	"github.com/Norgate-AV/smpc/internal/windows"
-)
-
-const (
-	// Timeout for waiting for SIMPL Windows to appear
-	windowAppearTimeout = 60 * time.Second
-	// Timeout for window to become ready
-	windowReadyTimeout = 30 * time.Second
-	// UI settling time
-	uiSettleTime = 5 * time.Second
 )
 
 // TestIntegration_SimpleCompile tests end-to-end compilation of a simple .smw file
@@ -178,21 +170,21 @@ func compileFile(t *testing.T, filePath string, recompileAll bool) (*compiler.Co
 	require.NoError(t, err, "Should launch SIMPL Windows")
 
 	// Wait for process to start
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(timeouts.WindowMessageDelay)
 
 	// Wait for window to appear
 	t.Log("Waiting for SIMPL Windows to appear...")
-	hwnd, found := simpl.WaitForAppear(windowAppearTimeout)
+	hwnd, found := simpl.WaitForAppear(timeouts.WindowAppearTimeout)
 	require.True(t, found, "SIMPL Windows should appear within timeout")
 	require.NotZero(t, hwnd, "Should have valid window handle")
 
 	// Wait for window to be ready
 	t.Log("Waiting for window to be ready...")
-	ready := simpl.WaitForReady(hwnd, windowReadyTimeout)
+	ready := simpl.WaitForReady(hwnd, timeouts.WindowReadyTimeout)
 	require.True(t, ready, "SIMPL Windows should be ready within timeout")
 
 	// Allow UI to settle
-	time.Sleep(uiSettleTime)
+	time.Sleep(timeouts.UISettlingDelay)
 
 	// Get PID for cleanup
 	var simplPid uint32
@@ -205,7 +197,7 @@ func compileFile(t *testing.T, filePath string, recompileAll bool) (*compiler.Co
 			simpl.Cleanup(hwnd)
 		}
 		// Give it time to close
-		time.Sleep(1 * time.Second)
+		time.Sleep(timeouts.FocusVerificationDelay)
 	}
 
 	// Run compilation
@@ -221,7 +213,6 @@ func compileFile(t *testing.T, filePath string, recompileAll bool) (*compiler.Co
 		Ctx:          ctx,
 		SimplPidPtr:  &simplPid,
 	}, deps)
-
 	// Note: We don't require NoError here because some tests expect compilation to fail
 	if err != nil {
 		t.Logf("Compilation returned error: %v", err)
