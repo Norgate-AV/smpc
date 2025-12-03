@@ -166,7 +166,8 @@ func compileFile(t *testing.T, filePath string, recompileAll bool) (*compiler.Co
 
 	// Open file with SIMPL Windows
 	t.Logf("Opening SIMPL Windows with file: %s", absPath)
-	err = windows.ShellExecute(0, "runas", simpl.SIMPL_WINDOWS_PATH, absPath, "", 1)
+	// TODO: Use ShellExecuteEx to get PID here
+	err = windows.ShellExecute(0, "runas", simpl.GetSimplWindowsPath(), absPath, "", 1)
 	require.NoError(t, err, "Should launch SIMPL Windows")
 
 	// Wait for process to start
