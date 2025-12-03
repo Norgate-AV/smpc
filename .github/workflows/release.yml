@@ -38,26 +38,31 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
-      - name: Setup Rust Toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+      # - name: Setup Rust Toolchain
+      #   uses: actions-rust-lang/setup-rust-toolchain@v1
 
-      - name: Cache Rust tools
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/bin
-          key: ${{ runner.os }}-cargo-tools-v1
+      # - name: Cache Rust tools
+      #   uses: actions/cache@v4
+      #   with:
+      #     path: ~/.cargo/bin
+      #     key: ${{ runner.os }}-cargo-tools-v1
+
+      # - name: Install Rust tools
+      #   run: |
+      #     if ! command -v git-cliff &> /dev/null
+      #     then
+      #         cargo install git-cliff --force
+      #     fi
+
+      #     if ! command -v typos &> /dev/null
+      #     then
+      #         cargo install typos-cli --force
+      #     fi
 
       - name: Install Rust tools
-        run: |
-          if ! command -v git-cliff &> /dev/null
-          then
-              cargo install git-cliff --force
-          fi
-
-          if ! command -v typos &> /dev/null
-          then
-              cargo install typos-cli --force
-          fi
+        uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff,typos-cli
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
@@ -73,12 +78,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Uploading release notes to GitHub Release..."
           gh release edit ${{ github.ref_name }} --notes-file RELEASE_NOTES.md
 
-      - name: Commit Changelog
+      - name: Commit Changes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Committing updated CHANGELOG.md..."
-          ./scripts/commit-changelog.sh ${{ github.ref_name }}
+          ./scripts/commit.sh ${{ github.ref_name }}
