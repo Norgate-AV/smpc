@@ -8,6 +8,8 @@ import (
 )
 
 func TestGetSimplWindowsPath_DefaultPath(t *testing.T) {
+	// Cannot use t.Parallel() - modifies environment variables
+
 	// Ensure env var is not set
 	os.Unsetenv("SIMPL_WINDOWS_PATH")
 
@@ -16,6 +18,8 @@ func TestGetSimplWindowsPath_DefaultPath(t *testing.T) {
 }
 
 func TestGetSimplWindowsPath_EnvVarOverride(t *testing.T) {
+	// Cannot use t.Parallel() - modifies environment variables
+
 	customPath := "D:\\Custom\\Path\\To\\smpwin.exe"
 
 	// Set env var
@@ -27,6 +31,8 @@ func TestGetSimplWindowsPath_EnvVarOverride(t *testing.T) {
 }
 
 func TestGetSimplWindowsPath_EmptyEnvVar(t *testing.T) {
+	// Cannot use t.Parallel() - modifies environment variables
+
 	// Set env var to empty string
 	os.Setenv("SIMPL_WINDOWS_PATH", "")
 	defer os.Unsetenv("SIMPL_WINDOWS_PATH")
@@ -36,6 +42,8 @@ func TestGetSimplWindowsPath_EmptyEnvVar(t *testing.T) {
 }
 
 func TestValidateSimplWindowsInstallation_DefaultPathNotFound(t *testing.T) {
+	// Cannot use t.Parallel() - modifies environment variables
+
 	// Most test environments won't have SIMPL Windows installed
 	os.Unsetenv("SIMPL_WINDOWS_PATH")
 
@@ -49,6 +57,8 @@ func TestValidateSimplWindowsInstallation_DefaultPathNotFound(t *testing.T) {
 }
 
 func TestValidateSimplWindowsInstallation_CustomPathNotFound(t *testing.T) {
+	// Cannot use t.Parallel() - modifies environment variables
+
 	nonExistentPath := "Z:\\NonExistent\\Path\\smpwin.exe"
 
 	os.Setenv("SIMPL_WINDOWS_PATH", nonExistentPath)

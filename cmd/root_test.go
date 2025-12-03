@@ -23,6 +23,8 @@ func resetFlags() {
 
 // TestValidateArgs_ValidFile tests argument validation with valid .smw file
 func TestValidateArgs_ValidFile(t *testing.T) {
+	t.Parallel()
+
 	resetFlags()
 
 	// Create a temporary .smw file
@@ -40,6 +42,8 @@ func TestValidateArgs_ValidFile(t *testing.T) {
 
 // TestValidateArgs_InvalidExtension tests argument validation with non-.smw file
 func TestValidateArgs_InvalidExtension(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name      string
 		file      string
@@ -68,7 +72,10 @@ func TestValidateArgs_InvalidExtension(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt // Capture range variable
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			resetFlags()
 
 			cmd := &cobra.Command{}
@@ -83,6 +90,8 @@ func TestValidateArgs_InvalidExtension(t *testing.T) {
 
 // TestValidateArgs_MissingArgument tests validation with no file argument
 func TestValidateArgs_MissingArgument(t *testing.T) {
+	t.Parallel()
+
 	resetFlags()
 
 	cmd := &cobra.Command{}
@@ -96,6 +105,8 @@ func TestValidateArgs_MissingArgument(t *testing.T) {
 
 // TestValidateArgs_TooManyArguments tests validation with multiple arguments
 func TestValidateArgs_TooManyArguments(t *testing.T) {
+	t.Parallel()
+
 	resetFlags()
 
 	cmd := &cobra.Command{}
@@ -207,6 +218,8 @@ func TestRootCmd_Help(t *testing.T) {
 
 // TestRootCmd_Flags tests flag parsing
 func TestRootCmd_Flags(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name              string
 		args              []string
@@ -280,7 +293,10 @@ func TestRootCmd_Flags(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt // Capture range variable
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			resetFlags()
 
 			// Create a new command instance to avoid flag conflicts
@@ -364,6 +380,8 @@ func captureCommandOutput(_ *testing.T, args []string) string {
 
 // TestExecutionContext_ExitFuncInjectable tests that exitFunc is injectable for testing
 func TestExecutionContext_ExitFuncInjectable(t *testing.T) {
+	t.Parallel()
+
 	// Create a mock logger
 	log := &logger.NoOpLogger{}
 
@@ -393,6 +411,8 @@ func TestExecutionContext_ExitFuncInjectable(t *testing.T) {
 
 // TestExecutionContext_DefaultExitFunc tests that exitFunc defaults to os.Exit
 func TestExecutionContext_DefaultExitFunc(t *testing.T) {
+	t.Parallel()
+
 	// Create execution context with default exit function (as done in Execute)
 	ctx := &ExecutionContext{
 		exitFunc: os.Exit,
@@ -400,4 +420,95 @@ func TestExecutionContext_DefaultExitFunc(t *testing.T) {
 
 	// Verify exitFunc is set (we can't call it without actually exiting)
 	assert.NotNil(t, ctx.exitFunc, "Exit function should be set")
+}
+
+// TestValidateAndResolvePath_ValidFile tests validation with an existing file
+func TestValidateAndResolvePath_ValidFile(t *testing.T) {
+	t.Parallel()
+
+	// Create a temporary .smw file
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "test.smw")
+	err := os.WriteFile(testFile, []byte("test content"), 0o644)
+	assert.NoError(t, err, "Should create test file")
+
+	// Create a mock logger
+	mockLog := logger.NewNoOpLogger()
+
+	// Validate and resolve path
+	absPath, err := validateAndResolvePath(testFile, mockLog)
+
+	assert.NoError(t, err, "Should not error for existing file")
+	assert.NotEmpty(t, absPath, "Should return absolute path")
+	assert.True(t, filepath.IsAbs(absPath), "Returned path should be absolute")
+}
+
+// TestValidateAndResolvePath_MissingFile tests validation with non-existent file
+func TestValidateAndResolvePath_MissingFile(t *testing.T) {
+	t.Parallel()
+
+	// Create a mock logger
+	mockLog := logger.NewNoOpLogger()
+
+	// Try to validate a non-existent file
+	nonExistentFile := filepath.Join(t.TempDir(), "does-not-exist.smw")
+	absPath, err := validateAndResolvePath(nonExistentFile, mockLog)
+
+	assert.Error(t, err, "Should return error for non-existent file")
+	assert.Empty(t, absPath, "Should return empty path on error")
+	assert.Contains(t, err.Error(), "file does not exist", "Error should mention file doesn't exist")
+	assert.Contains(t, err.Error(), nonExistentFile, "Error should include file path")
+}
+
+// TestValidateAndResolvePath_RelativePath tests resolving a relative path
+func TestValidateAndResolvePath_RelativePath(t *testing.T) {
+	t.Parallel()
+
+	// Create a temporary directory and file
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "relative.smw")
+	err := os.WriteFile(testFile, []byte("test"), 0o644)
+	assert.NoError(t, err, "Should create test file")
+
+	// Change to temp directory to test relative path resolution
+	originalDir, err := os.Getwd()
+	assert.NoError(t, err, "Should get current directory")
+	defer func() {
+		err := os.Chdir(originalDir)
+		assert.NoError(t, err, "Should restore original directory")
+	}()
+
+	err = os.Chdir(tempDir)
+	assert.NoError(t, err, "Should change to temp directory")
+
+	// Create a mock logger
+	mockLog := logger.NewNoOpLogger()
+
+	// Validate relative path
+	absPath, err := validateAndResolvePath("relative.smw", mockLog)
+
+	assert.NoError(t, err, "Should resolve relative path")
+	assert.True(t, filepath.IsAbs(absPath), "Should return absolute path")
+	assert.Contains(t, absPath, "relative.smw", "Should contain filename")
+}
+
+// TestValidateAndResolvePath_DirectoryInsteadOfFile tests error when path is a directory
+func TestValidateAndResolvePath_DirectoryInsteadOfFile(t *testing.T) {
+	t.Parallel()
+
+	// Create a temporary directory
+	tempDir := t.TempDir()
+
+	// Create a mock logger
+	mockLog := logger.NewNoOpLogger()
+
+	// Try to validate a directory instead of a file
+	// os.Stat succeeds for directories, so this tests that we don't validate file type
+	absPath, err := validateAndResolvePath(tempDir, mockLog)
+
+	// The function only checks if path exists via os.Stat, not if it's a file
+	// So it should succeed and return the absolute path
+	assert.NoError(t, err, "Function doesn't validate file type, only existence")
+	assert.NotEmpty(t, absPath, "Should return absolute path")
+	assert.True(t, filepath.IsAbs(absPath), "Should return absolute path")
 }
