@@ -22,8 +22,9 @@ test:
 
 .PHONY: test-coverage
 test-coverage:
-	go test ./... -coverprofile=coverage.out
-	go tool cover -html=coverage.out -o coverage.html
+	@powershell -Command "if (-not (Test-Path .coverage)) { New-Item -ItemType Directory -Path .coverage }"
+	go test ./... -coverprofile=.coverage/coverage.out
+	go tool cover -html=.coverage/coverage.out -o .coverage/coverage.html
 
 .PHONY: test-short
 test-short:

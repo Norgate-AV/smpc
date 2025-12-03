@@ -34,6 +34,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache: true
 
       - name: Install dependencies
         run: go mod download
@@ -57,9 +58,13 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
           cache: true
+          cache-dependency-path: go.sum
 
       - name: Install dependencies
         run: go mod download
+
+      - name: Reinstall standard library
+        run: go install -a std
 
       - name: Run tests with coverage
         run: make test-coverage
