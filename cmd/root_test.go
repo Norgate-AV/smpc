@@ -19,10 +19,6 @@ func resetFlags() {
 	_ = RootCmd.Flags().Set("verbose", "false")
 	_ = RootCmd.Flags().Set("recompile-all", "false")
 	_ = RootCmd.Flags().Set("logs", "false")
-
-	// Reset global state
-	simplHwnd = 0
-	simplPid = 0
 }
 
 // TestValidateArgs_ValidFile tests argument validation with valid .smw file

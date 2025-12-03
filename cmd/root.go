@@ -19,14 +19,17 @@ import (
 	"github.com/Norgate-AV/smpc/internal/windows"
 )
 
-var (
-	// Track SIMPL Windows for cleanup on interrupt
-	simplHwnd uintptr
-	simplPid  uint32
+// ExecutionContext holds state needed throughout the compilation process
+// and for cleanup in signal handlers.
+type ExecutionContext struct {
+	simplHwnd   uintptr
+	simplPid    uint32
+	log         logger.LoggerInterface
+	simplClient *simpl.Client
+}
 
-	// osExit allows mocking os.Exit for testing
-	osExit = os.Exit
-)
+// osExit allows mocking os.Exit for testing
+var osExit = os.Exit
 
 var RootCmd = &cobra.Command{
 	Use:     "smpc <file-path>",
@@ -163,17 +166,18 @@ func launchSIMPLWindows(simplClient *simpl.Client, absPath string, log logger.Lo
 }
 
 // setupSignalHandlers configures console control and interrupt signal handlers
-func setupSignalHandlers(simplClient *simpl.Client, hwndPtr *uintptr, pid uint32, log logger.LoggerInterface) {
+// It captures the ExecutionContext in closures to access state for cleanup
+func setupSignalHandlers(ctx *ExecutionContext) {
 	// Set up Windows console control handler to catch window close events
 	_ = windows.SetConsoleCtrlHandler(func(ctrlType uint32) uintptr {
-		log.Debug("Received console control event",
+		ctx.log.Debug("Received console control event",
 			slog.String("type", windows.GetCtrlTypeName(ctrlType)),
 			slog.Uint64("code", uint64(ctrlType)),
 		)
 
-		log.Info("Cleaning up after console control event")
-		simplClient.ForceCleanup(*hwndPtr, pid)
-		log.Debug("Cleanup completed, exiting")
+		ctx.log.Info("Cleaning up after console control event")
+		ctx.simplClient.ForceCleanup(ctx.simplHwnd, ctx.simplPid)
+		ctx.log.Debug("Cleanup completed, exiting")
 
 		os.Exit(130)
 		return 1
@@ -185,12 +189,12 @@ func setupSignalHandlers(simplClient *simpl.Client, hwndPtr *uintptr, pid uint32
 
 	go func() {
 		sig := <-sigChan
-		log.Debug("Received signal", slog.Any("signal", sig))
-		log.Info("Interrupt signal received, starting cleanup")
+		ctx.log.Debug("Received signal", slog.Any("signal", sig))
+		ctx.log.Info("Interrupt signal received, starting cleanup")
 
-		simplClient.ForceCleanup(*hwndPtr, pid)
+		ctx.simplClient.ForceCleanup(ctx.simplHwnd, ctx.simplPid)
 
-		log.Debug("Cleanup completed, exiting")
+		ctx.log.Debug("Cleanup completed, exiting")
 		os.Exit(130)
 	}()
 }
@@ -276,6 +280,7 @@ func Execute(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+
 	defer log.Close()
 
 	log.Debug("Starting smpc", slog.Any("args", args))
@@ -311,25 +316,30 @@ func Execute(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+
 	defer cleanup()
 
-	// Store pid globally for signal handlers
-	simplPid = pid
+	// Create execution context to hold state for signal handlers
+	ctx := &ExecutionContext{
+		simplPid:    pid,
+		log:         log,
+		simplClient: simplClient,
+	}
 
-	setupSignalHandlers(simplClient, &simplHwnd, pid, log)
+	setupSignalHandlers(ctx)
 
 	hwnd, err := waitForWindowReady(simplClient, pid, log)
 	if err != nil {
 		return err
 	}
 
-	// Store hwnd globally for signal handlers and cleanup
-	simplHwnd = hwnd
-	log.Debug("Stored hwnd for signal handler", slog.Uint64("hwnd", uint64(simplHwnd)))
+	// Store hwnd in context for signal handlers and cleanup
+	ctx.simplHwnd = hwnd
+	log.Debug("Stored hwnd in execution context", slog.Uint64("hwnd", uint64(hwnd)))
 
 	defer simplClient.Cleanup(hwnd)
 
-	result, err := runCompilation(absPath, hwnd, &simplPid, cfg, log)
+	result, err := runCompilation(absPath, hwnd, &ctx.simplPid, cfg, log)
 	if err != nil {
 		return err
 	}
