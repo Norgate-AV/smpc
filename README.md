@@ -1,5 +1,11 @@
 # smpc
 
+[![CI](https://github.com/Norgate-AV/smpc/workflows/CI/badge.svg)](https://github.com/Norgate-AV/smpc/actions)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Norgate-AV/smpc)](https://goreportcard.com/report/github.com/Norgate-AV/smpc)
+[![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go)](https://golang.org)
+[![Release](https://img.shields.io/github/v/release/Norgate-AV/smpc)](https://github.com/Norgate-AV/smpc/releases)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 A tool to automate compiling [Crestron][crestron] [SIMPL Windows][smpwin] programs.
 
 [crestron]: https://www.crestron.com/
