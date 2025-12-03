@@ -17,12 +17,11 @@ jobs:
 
   build:
     name: Build
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     needs: [checks]
     strategy:
       matrix:
-        goos: [windows]
-        goarch: [amd64]
+        goarch: [amd64, arm64]
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -34,27 +33,23 @@ jobs:
 
       - name: Build optimized binary
         env:
-          GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
+        shell: pwsh
         run: |
-          EXT=""
-          if [ "$GOOS" = "windows" ]; then
-            EXT=".exe"
-          fi
+          $VERSION = if (git describe --tags --always --dirty 2>$null) { git describe --tags --always --dirty } else { "dev" }
+          $COMMIT = if (git rev-parse --short HEAD 2>$null) { git rev-parse --short HEAD } else { "unknown" }
+          $DATE = if (git log -1 --format=%cI 2>$null) { git log -1 --format=%cI } else { "unknown" }
 
-          VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
-          COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-          BUILD_TIME=$(git log -1 --format=%cI 2>/dev/null || echo "unknown")
-
-          CGO_ENABLED=0 go build \
-            -tags "netgo osusergo" \
-            -ldflags "-s -w -X github.com/Norgate-AV/smpc/internal/version.Version=${VERSION} -X github.com/Norgate-AV/smpc/internal/version.Commit=${COMMIT} -X github.com/Norgate-AV/smpc/internal/version.BuildTime=${BUILD_TIME}" \
-            -o "smpc${EXT}" \
+          $env:CGO_ENABLED = "0"
+          go build `
+            -trimpath `
+            -ldflags "-s -w -X github.com/Norgate-AV/smpc/internal/version.Version=$VERSION -X github.com/Norgate-AV/smpc/internal/version.Commit=$COMMIT -X github.com/Norgate-AV/smpc/internal/version.Date=$DATE" `
+            -o "smpc.exe" `
             .
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: smpc-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: smpc*
+          name: smpc-windows-${{ matrix.goarch }}
+          path: smpc.exe
           retention-days: 30
