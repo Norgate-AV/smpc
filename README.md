@@ -59,6 +59,37 @@ Exit codes:
 - `0`: Compilation successful (warnings/notices are OK)
 - `1`: Compilation failed with errors or runtime error
 
+## Configuration
+
+### Custom SIMPL Windows Path
+
+By default, `smpc` looks for SIMPL Windows at:
+
+```text
+C:\Program Files (x86)\Crestron\Simpl\smpwin.exe
+```
+
+If SIMPL Windows is installed in a different location, set the `SIMPL_WINDOWS_PATH` environment variable:
+
+```powershell
+# PowerShell - Current session only
+$env:SIMPL_WINDOWS_PATH = "D:\Custom\Path\To\smpwin.exe"
+
+# Or set it permanently (Windows User environment variable)
+[System.Environment]::SetEnvironmentVariable('SIMPL_WINDOWS_PATH', 'D:\Custom\Path\To\smpwin.exe', 'User')
+
+# Or add to your PowerShell profile for automatic loading
+Add-Content $PROFILE "`n`$env:SIMPL_WINDOWS_PATH = 'D:\Custom\Path\To\smpwin.exe'"
+```
+
+```cmd
+:: Command Prompt
+set SIMPL_WINDOWS_PATH=D:\Custom\Path\To\smpwin.exe
+
+:: Or set it permanently
+setx SIMPL_WINDOWS_PATH "D:\Custom\Path\To\smpwin.exe"
+```
+
 ## Administrator Privileges
 
 This tool requires elevated permissions to:
