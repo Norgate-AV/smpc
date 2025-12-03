@@ -309,12 +309,13 @@ func Execute(cmd *cobra.Command, args []string) error {
 
 	log.Debug("SIMPL Windows installation validated", slog.String("path", simpl.GetSimplWindowsPath()))
 
-	if err := ensureElevated(log); err != nil {
+	// Validate file path before requesting elevation
+	absPath, err := validateAndResolvePath(args[0], log)
+	if err != nil {
 		return err
 	}
 
-	absPath, err := validateAndResolvePath(args[0], log)
-	if err != nil {
+	if err := ensureElevated(log); err != nil {
 		return err
 	}
 
