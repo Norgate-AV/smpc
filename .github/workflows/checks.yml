@@ -71,13 +71,3 @@ jobs:
 
       - name: Run tests
         run: make test
-
-      # - name: Run tests with coverage
-      #   run: make test-coverage
-
-      # - name: Upload coverage to Codecov
-      #   if: matrix.os == 'windows-latest' && matrix.go-version == '1.25'
-      #   uses: codecov/codecov-action@v5
-      #   with:
-      #     files: ./.coverage/coverage.out
-      #     token: ${{ secrets.CODECOV_TOKEN }}
