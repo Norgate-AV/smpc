@@ -3,6 +3,7 @@
 package windows
 
 import (
+	"context"
 	"log/slog"
 	"time"
 
@@ -20,13 +21,21 @@ func newMonitorManager(log logger.LoggerInterface) *monitorManager {
 }
 
 // StartWindowMonitor launches a background goroutine that monitors windows
-func (m *monitorManager) StartWindowMonitor(pid uint32, interval time.Duration) {
+// The goroutine will stop when the context is canceled
+func (m *monitorManager) StartWindowMonitor(ctx context.Context, pid uint32, interval time.Duration) {
 	seen := make(map[uintptr]bool)
 
 	go func() {
 		m.log.Debug("Window monitor started")
 
 		for {
+			select {
+			case <-ctx.Done():
+				m.log.Debug("Window monitor stopped")
+				return
+			default:
+			}
+
 			windows := EnumerateWindows()
 
 			for _, w := range windows {

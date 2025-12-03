@@ -1,6 +1,7 @@
 package simpl
 
 import (
+	"context"
 	"log/slog"
 	"strings"
 	"time"
@@ -250,7 +251,7 @@ func (c *Client) ForceCleanup(hwnd uintptr, knownPid uint32) {
 // StartMonitoring starts a background goroutine that monitors SIMPL Windows dialogs
 // Returns a function to stop the monitoring
 func (c *Client) StartMonitoring() func() {
-	done := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
 		// Try to obtain PID repeatedly until found, then monitor that PID
@@ -258,7 +259,7 @@ func (c *Client) StartMonitoring() func() {
 
 		for i := 0; i < 50 && pid == 0; i++ { // up to ~5s
 			select {
-			case <-done:
+			case <-ctx.Done():
 				return
 			default:
 				pid = c.GetPid()
@@ -272,18 +273,18 @@ func (c *Client) StartMonitoring() func() {
 		windows.MonitorCh = make(chan windows.WindowEvent, 64)
 		if pid == 0 {
 			c.log.Debug("Window monitor falling back to all processes (SIMPL PID not found yet)")
-			c.win.Monitor.StartWindowMonitor(0, timeouts.MonitorPollingInterval)
+			c.win.Monitor.StartWindowMonitor(ctx, 0, timeouts.MonitorPollingInterval)
 		} else {
 			c.log.Debug("Window monitor targeting SIMPL PID", slog.Uint64("pid", uint64(pid)))
-			c.win.Monitor.StartWindowMonitor(pid, timeouts.MonitorPollingInterval)
+			c.win.Monitor.StartWindowMonitor(ctx, pid, timeouts.MonitorPollingInterval)
 		}
 
-		// Wait for done signal
-		<-done
+		// Wait for cancellation
+		<-ctx.Done()
 	}()
 
 	return func() {
-		close(done)
+		cancel()
 	}
 }
 
