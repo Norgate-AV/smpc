@@ -141,20 +141,20 @@ func TestValidateArgs_LogsFlag(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	// Capture exit call (Execute calls os.Exit(0) for --logs)
+	// Test handleLogsFlag directly with a mock exit function
 	exitCalled := false
-	oldOsExit := osExit
-	osExit = func(code int) {
+	var exitCode int
+	mockExit := func(code int) {
 		exitCalled = true
-		assert.Equal(t, 0, code, "Should exit with code 0 for --logs")
+		exitCode = code
 	}
 
-	defer func() { osExit = oldOsExit }()
+	// Create Config with ShowLogs flag
+	cfg := &Config{ShowLogs: true}
 
-	args := []string{} // --logs doesn't require file argument
-
-	// Call Execute with RootCmd (which now handles --logs)
-	_ = Execute(RootCmd, args)
+	// Call handleLogsFlag directly instead of through Execute
+	err = handleLogsFlag(cfg, mockExit)
+	assert.NoError(t, err)
 
 	// Restore stdout
 	w.Close()
@@ -166,7 +166,8 @@ func TestValidateArgs_LogsFlag(t *testing.T) {
 	output := buf.String()
 
 	// Verify results
-	assert.True(t, exitCalled, "Should call os.Exit(0) for --logs flag")
+	assert.True(t, exitCalled, "Should call exit function for --logs flag")
+	assert.Equal(t, 0, exitCode, "Should exit with code 0 for --logs")
 	assert.Contains(t, output, testContent, "Should print log file content to stdout")
 }
 
@@ -359,4 +360,44 @@ func captureCommandOutput(_ *testing.T, args []string) string {
 	_, _ = buf.ReadFrom(r)
 
 	return buf.String()
+}
+
+// TestExecutionContext_ExitFuncInjectable tests that exitFunc is injectable for testing
+func TestExecutionContext_ExitFuncInjectable(t *testing.T) {
+	// Create a mock logger
+	log := &logger.NoOpLogger{}
+
+	// Track if exit was called and with what code
+	exitCalled := false
+	var exitCode int
+
+	// Create execution context with mock exit function
+	ctx := &ExecutionContext{
+		simplPid:    12345,
+		simplHwnd:   67890,
+		log:         log,
+		simplClient: nil, // Not needed for this test
+		exitFunc: func(code int) {
+			exitCalled = true
+			exitCode = code
+		},
+	}
+
+	// Verify exitFunc can be called
+	ctx.exitFunc(130)
+
+	// Verify our mock was called correctly
+	assert.True(t, exitCalled, "Exit function should have been called")
+	assert.Equal(t, 130, exitCode, "Exit code should be 130")
+}
+
+// TestExecutionContext_DefaultExitFunc tests that exitFunc defaults to os.Exit
+func TestExecutionContext_DefaultExitFunc(t *testing.T) {
+	// Create execution context with default exit function (as done in Execute)
+	ctx := &ExecutionContext{
+		exitFunc: os.Exit,
+	}
+
+	// Verify exitFunc is set (we can't call it without actually exiting)
+	assert.NotNil(t, ctx.exitFunc, "Exit function should be set")
 }

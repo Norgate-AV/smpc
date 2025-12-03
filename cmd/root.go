@@ -26,10 +26,8 @@ type ExecutionContext struct {
 	simplPid    uint32
 	log         logger.LoggerInterface
 	simplClient *simpl.Client
+	exitFunc    func(int) // Injectable for testing; defaults to os.Exit
 }
-
-// osExit allows mocking os.Exit for testing
-var osExit = os.Exit
 
 var RootCmd = &cobra.Command{
 	Use:     "smpc <file-path>",
@@ -69,7 +67,7 @@ func validateArgs(cmd *cobra.Command, args []string) error {
 }
 
 // handleLogsFlag processes the --logs flag and exits if needed
-func handleLogsFlag(cfg *Config) error {
+func handleLogsFlag(cfg *Config, exitFunc func(int)) error {
 	if !cfg.ShowLogs {
 		return nil
 	}
@@ -78,15 +76,15 @@ func handleLogsFlag(cfg *Config) error {
 		if os.IsNotExist(err) {
 			logPath := logger.GetLogPath(logger.LoggerOptions{})
 			fmt.Fprintf(os.Stderr, "Log file does not exist: %s\n", logPath)
-			osExit(1)
+			exitFunc(1)
 		}
 
 		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
-		osExit(1)
+		exitFunc(1)
 	}
 
-	osExit(0)
-	return nil // Won't actually reach here due to osExit
+	exitFunc(0)
+	return nil // Won't actually reach here due to exitFunc
 }
 
 // initializeLogger creates a logger and logs startup information
@@ -179,7 +177,7 @@ func setupSignalHandlers(ctx *ExecutionContext) {
 		ctx.simplClient.ForceCleanup(ctx.simplHwnd, ctx.simplPid)
 		ctx.log.Debug("Cleanup completed, exiting")
 
-		os.Exit(130)
+		ctx.exitFunc(130)
 		return 1
 	})
 
@@ -195,7 +193,7 @@ func setupSignalHandlers(ctx *ExecutionContext) {
 		ctx.simplClient.ForceCleanup(ctx.simplHwnd, ctx.simplPid)
 
 		ctx.log.Debug("Cleanup completed, exiting")
-		os.Exit(130)
+		ctx.exitFunc(130)
 	}()
 }
 
@@ -268,7 +266,7 @@ func displayCompilationResults(result *compiler.CompileResult, log logger.Logger
 func Execute(cmd *cobra.Command, args []string) error {
 	cfg := NewConfigFromFlags(cmd)
 
-	if err := handleLogsFlag(cfg); err != nil {
+	if err := handleLogsFlag(cfg, os.Exit); err != nil {
 		return err
 	}
 
@@ -324,6 +322,7 @@ func Execute(cmd *cobra.Command, args []string) error {
 		simplPid:    pid,
 		log:         log,
 		simplClient: simplClient,
+		exitFunc:    os.Exit,
 	}
 
 	setupSignalHandlers(ctx)
