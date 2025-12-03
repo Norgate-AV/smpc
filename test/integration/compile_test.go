@@ -166,16 +166,16 @@ func compileFile(t *testing.T, filePath string, recompileAll bool) (*compiler.Co
 
 	// Open file with SIMPL Windows
 	t.Logf("Opening SIMPL Windows with file: %s", absPath)
-	// TODO: Use ShellExecuteEx to get PID here
-	err = windows.ShellExecute(0, "runas", simpl.GetSimplWindowsPath(), absPath, "", 1)
+	pid, err := windows.ShellExecuteEx(0, "open", simpl.GetSimplWindowsPath(), absPath, "", 1)
 	require.NoError(t, err, "Should launch SIMPL Windows")
+	t.Logf("SIMPL Windows process started with PID: %d", pid)
 
 	// Wait for process to start
 	time.Sleep(timeouts.WindowMessageDelay)
 
 	// Wait for window to appear
 	t.Log("Waiting for SIMPL Windows to appear...")
-	hwnd, found := simpl.WaitForAppear(timeouts.WindowAppearTimeout)
+	hwnd, found := simpl.WaitForAppear(pid, timeouts.WindowAppearTimeout)
 	require.True(t, found, "SIMPL Windows should appear within timeout")
 	require.NotZero(t, hwnd, "Should have valid window handle")
 
@@ -187,8 +187,8 @@ func compileFile(t *testing.T, filePath string, recompileAll bool) (*compiler.Co
 	// Allow UI to settle
 	time.Sleep(timeouts.UISettlingDelay)
 
-	// Get PID for cleanup
-	var simplPid uint32
+	// Use the PID from ShellExecuteEx for compilation
+	simplPid := pid
 
 	// Cleanup function
 	cleanup := func() {
