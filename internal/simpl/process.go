@@ -16,7 +16,13 @@ func findProcessByName(processName string) uint32 {
 		return 0
 	}
 
-	defer func() { _, _, _ = windows.ProcCloseHandle.Call(snapshot) }()
+	defer func() {
+		if ret, _, err := windows.ProcCloseHandle.Call(snapshot); ret == 0 {
+			// Snapshot handle leak detected but can't log - no logger in package-level utility
+			// This is acceptable as findProcessByName is called infrequently
+			_ = err
+		}
+	}()
 
 	var pe windows.PROCESSENTRY32
 	pe.DwSize = uint32(unsafe.Sizeof(pe))

@@ -126,22 +126,34 @@ func (k *keyboardInjector) SendAltF12ToWindow(hwnd uintptr) bool {
 
 	// Send Alt down
 	k.log.Debug("Sending WM_SYSKEYDOWN (Alt)")
-	_, _, _ = procSendMessageW.Call(hwnd, WM_SYSKEYDOWN, VK_MENU, lParamAltDown)
+	ret, _, err := procSendMessageW.Call(hwnd, WM_SYSKEYDOWN, VK_MENU, lParamAltDown)
+	if ret == 0 {
+		k.log.Debug("SendMessage WM_SYSKEYDOWN Alt failed", slog.Any("error", err))
+	}
 	time.Sleep(timeouts.KeystrokeDelay)
 
 	// Send F12 down
 	k.log.Debug("Sending WM_SYSKEYDOWN (F12)")
-	_, _, _ = procSendMessageW.Call(hwnd, WM_SYSKEYDOWN, VK_F12, lParamF12Down)
+	ret, _, err = procSendMessageW.Call(hwnd, WM_SYSKEYDOWN, VK_F12, lParamF12Down)
+	if ret == 0 {
+		k.log.Debug("SendMessage WM_SYSKEYDOWN F12 failed", slog.Any("error", err))
+	}
 	time.Sleep(timeouts.KeystrokeDelay)
 
 	// Send F12 up
 	k.log.Debug("Sending WM_SYSKEYUP (F12)")
-	_, _, _ = procSendMessageW.Call(hwnd, WM_SYSKEYUP, VK_F12, lParamF12Up)
+	ret, _, err = procSendMessageW.Call(hwnd, WM_SYSKEYUP, VK_F12, lParamF12Up)
+	if ret == 0 {
+		k.log.Debug("SendMessage WM_SYSKEYUP F12 failed", slog.Any("error", err))
+	}
 	time.Sleep(timeouts.KeystrokeDelay)
 
 	// Send Alt up
 	k.log.Debug("Sending WM_SYSKEYUP (Alt)")
-	_, _, _ = procSendMessageW.Call(hwnd, WM_SYSKEYUP, VK_MENU, lParamAltUp)
+	ret, _, err = procSendMessageW.Call(hwnd, WM_SYSKEYUP, VK_MENU, lParamAltUp)
+	if ret == 0 {
+		k.log.Debug("SendMessage WM_SYSKEYUP Alt failed", slog.Any("error", err))
+	}
 
 	k.log.Debug("Alt+F12 sent via SendMessage (synchronous)")
 	return true

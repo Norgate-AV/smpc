@@ -25,7 +25,15 @@ func newWindowManager(log logger.LoggerInterface) *windowManager {
 // CloseWindow sends a WM_CLOSE message to the specified window
 func (w *windowManager) CloseWindow(hwnd uintptr, title string) {
 	w.log.Debug("Closing window", slog.String("title", title))
-	_, _, _ = procPostMessageW.Call(hwnd, WM_CLOSE, 0, 0)
+
+	ret, _, err := procPostMessageW.Call(hwnd, WM_CLOSE, 0, 0)
+	if ret == 0 {
+		w.log.Debug("PostMessage WM_CLOSE failed",
+			slog.String("title", title),
+			slog.Uint64("hwnd", uint64(hwnd)),
+			slog.Any("error", err))
+	}
+
 	time.Sleep(timeouts.WindowMessageDelay)
 }
 
@@ -74,7 +82,10 @@ func (w *windowManager) VerifyForegroundWindow(expectedHwnd uintptr, expectedPid
 	// If PID verification requested, check it
 	if expectedPid != 0 {
 		var actualPid uint32
-		_, _, _ = procGetWindowThreadProcessId.Call(fgHwnd, uintptr(unsafe.Pointer(&actualPid)))
+		ret, _, err := procGetWindowThreadProcessId.Call(fgHwnd, uintptr(unsafe.Pointer(&actualPid)))
+		if ret == 0 {
+			w.log.Debug("GetWindowThreadProcessId failed", slog.Any("error", err))
+		}
 
 		if actualPid != expectedPid {
 			w.log.Warn("Foreground window has wrong PID",
@@ -152,9 +163,16 @@ func (w *windowManager) FindAndClickButton(parentHwnd uintptr, buttonText string
 				slog.String("text", buttonText),
 				slog.Uint64("hwnd", uint64(ci.Hwnd)),
 			)
+
 			// Send BN_CLICKED notification to parent
 			// WM_COMMAND: wParam = MAKEWPARAM(controlID, BN_CLICKED), lParam = hwnd
-			_, _, _ = procSendMessageW.Call(parentHwnd, WM_COMMAND, uintptr(BN_CLICKED), ci.Hwnd)
+			ret, _, err := procSendMessageW.Call(parentHwnd, WM_COMMAND, uintptr(BN_CLICKED), ci.Hwnd)
+			if ret == 0 {
+				w.log.Debug("SendMessage BN_CLICKED failed",
+					slog.String("text", ci.Text),
+					slog.Any("error", err))
+			}
+
 			return true
 		}
 	}

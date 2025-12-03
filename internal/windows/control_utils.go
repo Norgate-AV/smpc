@@ -56,6 +56,8 @@ func CollectChildInfos(hwnd uintptr) []ChildInfo {
 		return 1
 	}
 
+	// EnumChildWindows: return value indicates success but errors aren't meaningful here
+	// The callback approach makes individual error logging impractical
 	_, _, _ = procEnumChildWindows.Call(hwnd, syscall.NewCallback(cb), 0)
 	return infos
 }

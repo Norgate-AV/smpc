@@ -147,7 +147,7 @@ func launchSIMPLWindows(simplClient *simpl.Client, absPath string, log logger.Lo
 	// Open the file with SIMPL Windows application using elevated privileges
 	// SW_SHOWNORMAL = 1
 	log.Debug("Launching SIMPL Windows with file", slog.String("path", absPath))
-	pid, err = windows.ShellExecuteEx(0, "open", simpl.GetSimplWindowsPath(), absPath, "", 1)
+	pid, err = windows.ShellExecuteEx(0, "open", simpl.GetSimplWindowsPath(), absPath, "", 1, log)
 	if err != nil {
 		stopMonitor()
 		log.Error("ShellExecuteEx failed", slog.Any("error", err))

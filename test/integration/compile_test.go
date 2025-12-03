@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/Norgate-AV/smpc/internal/compiler"
+	"github.com/Norgate-AV/smpc/internal/logger"
 	"github.com/Norgate-AV/smpc/internal/simpl"
 	"github.com/Norgate-AV/smpc/internal/timeouts"
 	"github.com/Norgate-AV/smpc/internal/windows"
@@ -164,9 +165,14 @@ func compileFile(t *testing.T, filePath string, recompileAll bool) (*compiler.Co
 	// Start background window monitor
 	go simpl.StartMonitoring(ctx)
 
+	// Create a minimal logger for the test (discard output)
+	testLog, err := logger.NewLogger(logger.LoggerOptions{Verbose: false})
+	require.NoError(t, err, "Should create logger")
+	defer testLog.Close()
+
 	// Open file with SIMPL Windows
 	t.Logf("Opening SIMPL Windows with file: %s", absPath)
-	pid, err := windows.ShellExecuteEx(0, "open", simpl.GetSimplWindowsPath(), absPath, "", 1)
+	pid, err := windows.ShellExecuteEx(0, "open", simpl.GetSimplWindowsPath(), absPath, "", 1, testLog)
 	require.NoError(t, err, "Should launch SIMPL Windows")
 	t.Logf("SIMPL Windows process started with PID: %d", pid)
 

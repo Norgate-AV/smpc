@@ -23,7 +23,13 @@ func IsElevated() bool {
 		return false
 	}
 
-	defer func() { _, _, _ = ProcCloseHandle.Call(token) }()
+	defer func() {
+		if ret, _, err := ProcCloseHandle.Call(token); ret == 0 {
+			// Handle leak detected but can't log - no logger available in utility function
+			// This is acceptable as IsElevated is called once per process lifetime
+			_ = err
+		}
+	}()
 
 	var elevation TOKEN_ELEVATION
 	var returnLength uint32

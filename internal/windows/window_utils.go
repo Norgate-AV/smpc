@@ -4,8 +4,11 @@ package windows
 
 import (
 	"fmt"
+	"log/slog"
 	"syscall"
 	"unsafe"
+
+	"github.com/Norgate-AV/smpc/internal/logger"
 )
 
 // ShellExecute executes a file using the Windows shell
@@ -58,7 +61,7 @@ func ShellExecute(hwnd uintptr, verb, file, args, cwd string, showCmd int) error
 
 // ShellExecuteEx executes a file using the Windows shell and returns the process ID
 // This is more reliable than ShellExecute when you need to track the launched process
-func ShellExecuteEx(hwnd uintptr, verb, file, args, cwd string, showCmd int) (uint32, error) {
+func ShellExecuteEx(hwnd uintptr, verb, file, args, cwd string, showCmd int, log logger.LoggerInterface) (uint32, error) {
 	const SEE_MASK_NOCLOSEPROCESS = 0x00000040
 
 	var verbPtr, filePtr, argsPtr, cwdPtr *uint16
@@ -116,12 +119,17 @@ func ShellExecuteEx(hwnd uintptr, verb, file, args, cwd string, showCmd int) (ui
 	pid, _, _ := procGetProcessId.Call(sei.HProcess)
 	if pid == 0 {
 		// Clean up the process handle before returning error
-		_, _, _ = ProcCloseHandle.Call(sei.HProcess)
+		if ret, _, err := ProcCloseHandle.Call(sei.HProcess); ret == 0 {
+			log.Debug("Failed to close process handle in error path", slog.Any("error", err))
+		}
+
 		return 0, fmt.Errorf("failed to get process ID from handle")
 	}
 
 	// Close the process handle - we only need the PID
-	_, _, _ = ProcCloseHandle.Call(sei.HProcess)
+	if ret, _, err := ProcCloseHandle.Call(sei.HProcess); ret == 0 {
+		log.Debug("Failed to close process handle after getting PID", slog.Any("error", err))
+	}
 
 	return uint32(pid), nil
 }
@@ -183,7 +191,12 @@ func TerminateProcess(pid uint32) error {
 		return fmt.Errorf("failed to open process: %w", err)
 	}
 
-	defer func() { _, _, _ = ProcCloseHandle.Call(hProcess) }()
+	defer func() {
+		if ret, _, err := ProcCloseHandle.Call(hProcess); ret == 0 {
+			// Handle leak - log for diagnostics
+			_ = err // CloseHandle failed
+		}
+	}()
 
 	// Terminate the process
 	ret, _, err := procTerminateProcess.Call(hProcess, uintptr(1))
