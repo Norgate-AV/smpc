@@ -15,7 +15,6 @@ header = """
 # Changelog
 
 All notable changes to this project will be documented in this file.
-
 """
 # template for the changelog body
 # https://keats.github.io/tera/docs/#introduction
@@ -25,38 +24,40 @@ body = """
 {%- endmacro -%}
 
 {%- macro print_commit(commit) -%}
-    - {% if commit.scope %}*({{ commit.scope }})* {% endif %}\
+- {% if commit.scope %}*({{ commit.scope }})* {% endif %}\
         {% if commit.breaking %}[**breaking**] {% endif %}\
         {{ commit.message | upper_first }} - \
         ([{{ commit.id | truncate(length=7, end="") }}]({{ self::remote_url() }}/commit/{{ commit.id }}))
 {%- endmacro -%}
 
-{%- if version -%}
-    {%- if previous.version -%}
-        ## [{{ version | trim_start_matches(pat="v") }}]({{ self::remote_url() }}/compare/{{ previous.version }}..{{ version }}) - {{ timestamp | date(format="%Y-%m-%d") }}
-    {%- else -%}
-        ## [{{ version | trim_start_matches(pat="v") }}]({{ self::remote_url() }}/tree/{{ version }}) - {{ timestamp | date(format="%Y-%m-%d") }}
+
+{% if version %}
+    {%- if previous.version %}
+## [{{ version | trim_start_matches(pat="v") }}]({{ self::remote_url() }}/compare/{{ previous.version }}..{{ version }}) - {{ timestamp | date(format="%Y-%m-%d") }}
+    {%- else %}
+## [{{ version | trim_start_matches(pat="v") }}]({{ self::remote_url() }}/tree/{{ version }}) - {{ timestamp | date(format="%Y-%m-%d") }}
     {%- endif -%}
-{% endif %}
+{% endif -%}
 
 {%- if previous.version -%}
     {%- for group, commits in commits | group_by(attribute="group") %}
 
-        ### {{ group | striptags | trim | upper_first }}
+### {{ group | striptags | trim | upper_first }}
         {%- for commit in commits | filter(attribute="scope") | sort(attribute="scope") %}
-            {{ self::print_commit(commit=commit) }}
-        {%- endfor %}
-        {%- for commit in commits %}
-            {% if not commit.scope %}
-                {{ self::print_commit(commit=commit) }}
-            {%- endif %}
-        {%- endfor %}
-    {%- endfor -%}
-{% else %}
 
+{{ self::print_commit(commit=commit) }}
+        {%- endfor -%}
+        {%- for commit in commits %}
+            {%- if not commit.scope %}
+
+{{ self::print_commit(commit=commit) }}
+            {%- endif -%}
+        {%- endfor -%}
+    {%- endfor %}
+{% else %}
 ### 🎉🎉 Initial Release
 
-First official release of smpc.
+First release of smpc.
 {%- endif %}
 
 {%- if github %}
@@ -70,9 +71,10 @@ First official release of smpc.
         {%- endif %}
     {%- endfor %}
     {%- if first_time_contributors | length != 0 %}
-        ## New Contributors ❤️
+
+## New Contributors ❤️
         {%- for contributor in first_time_contributors %}
-            * @{{ contributor.username }} made their first contribution
+* @{{ contributor.username }} made their first contribution
             {%- if contributor.pr_number %} in [#{{ contributor.pr_number }}]({{ self::remote_url() }}/pull/{{ contributor.pr_number }})
             {%- endif %}
         {%- endfor %}
