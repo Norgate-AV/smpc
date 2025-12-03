@@ -301,6 +301,14 @@ func Execute(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
+	// Validate SIMPL Windows installation before checking elevation
+	if err := simpl.ValidateSimplWindowsInstallation(); err != nil {
+		log.Error("SIMPL Windows installation check failed", slog.Any("error", err))
+		return err
+	}
+
+	log.Debug("SIMPL Windows installation validated", slog.String("path", simpl.GetSimplWindowsPath()))
+
 	if err := ensureElevated(log); err != nil {
 		return err
 	}

@@ -34,3 +34,30 @@ func TestGetSimplWindowsPath_EmptyEnvVar(t *testing.T) {
 	path := GetSimplWindowsPath()
 	assert.Equal(t, DefaultSimplWindowsPath, path, "Should return default path when env var is empty")
 }
+
+func TestValidateSimplWindowsInstallation_DefaultPathNotFound(t *testing.T) {
+	// Most test environments won't have SIMPL Windows installed
+	os.Unsetenv("SIMPL_WINDOWS_PATH")
+
+	err := ValidateSimplWindowsInstallation()
+	// On systems without SIMPL Windows, we expect an error
+	if err != nil {
+		assert.Contains(t, err.Error(), "SIMPL Windows not found at default path")
+		assert.Contains(t, err.Error(), DefaultSimplWindowsPath)
+	}
+	// Note: If SIMPL Windows IS installed, err will be nil, which is also valid
+}
+
+func TestValidateSimplWindowsInstallation_CustomPathNotFound(t *testing.T) {
+	nonExistentPath := "Z:\\NonExistent\\Path\\smpwin.exe"
+
+	os.Setenv("SIMPL_WINDOWS_PATH", nonExistentPath)
+	defer os.Unsetenv("SIMPL_WINDOWS_PATH")
+
+	err := ValidateSimplWindowsInstallation()
+
+	assert.Error(t, err, "Should return error when custom path does not exist")
+	assert.Contains(t, err.Error(), "SIMPL Windows not found at custom path")
+	assert.Contains(t, err.Error(), nonExistentPath)
+	assert.Contains(t, err.Error(), "SIMPL_WINDOWS_PATH")
+}
