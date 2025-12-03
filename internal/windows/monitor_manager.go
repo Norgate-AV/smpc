@@ -55,7 +55,12 @@ func (m *monitorManager) StartWindowMonitor(pid uint32, interval time.Duration) 
 
 					// Broadcast event (non-blocking) and store in recent cache
 					if MonitorCh != nil {
-						ev := WindowEvent{Hwnd: w.Hwnd, Title: w.Title, Pid: w.Pid, Class: GetClassName(w.Hwnd)}
+						ev := WindowEvent{
+							Hwnd:  w.Hwnd,
+							Title: w.Title,
+							Pid:   w.Pid,
+							Class: GetClassName(w.Hwnd),
+						}
 
 						recentMu.Lock()
 						recentEvents = append(recentEvents, ev)
@@ -69,7 +74,12 @@ func (m *monitorManager) StartWindowMonitor(pid uint32, interval time.Duration) 
 						select {
 						case MonitorCh <- ev:
 						default:
-							// drop if buffer full
+							m.log.Warn("window monitor buffer full, event dropped",
+								slog.String("title", ev.Title),
+								slog.Uint64("hwnd", uint64(ev.Hwnd)),
+								slog.Uint64("pid", uint64(ev.Pid)),
+								slog.String("class", ev.Class),
+							)
 						}
 					}
 				}
