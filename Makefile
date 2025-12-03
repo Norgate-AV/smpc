@@ -20,6 +20,12 @@ install: build
 test:
 	go test ./... -v
 
+.PHONY: test-coverage
+test-coverage:
+	@powershell -Command "if (-not (Test-Path .coverage)) { New-Item -ItemType Directory -Path .coverage | Out-Null }"
+	go test ./... -coverprofile=.coverage/coverage.out
+	go tool cover -html=.coverage/coverage.out -o .coverage/coverage.html
+
 .PHONY: test-integration
 test-integration:
 	go test ./... -tags=integration -v
