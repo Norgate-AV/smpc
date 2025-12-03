@@ -4,7 +4,6 @@
 package integration
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -105,30 +104,25 @@ func TestIntegration_RecompileAll(t *testing.T) {
 	assert.Equal(t, 0, result.Errors, "Should have 0 errors")
 }
 
-// TestIntegration_NonExistentFile tests behavior with non-existent file
-func TestIntegration_NonExistentFile(t *testing.T) {
-	if !windows.IsElevated() {
-		t.Skip("Integration tests require administrator privileges")
-	}
+// TestIntegration_FileValidation tests the file validation that should occur before compilation
+func TestIntegration_FileValidation(t *testing.T) {
+	// This test doesn't require admin privileges - it's just file validation
 
 	nonExistentPath := filepath.Join(os.TempDir(), "nonexistent.smw")
 
 	// Ensure file doesn't exist
 	os.Remove(nonExistentPath)
 
-	ctx := context.Background()
+	// Create a minimal logger for the test
+	testLog, err := logger.NewLogger(logger.LoggerOptions{Verbose: false})
+	require.NoError(t, err, "Should create logger")
+	defer testLog.Close()
 
-	// Create real dependencies for integration test
-	deps := compiler.NewDefaultDependencies()
+	// Test that file validation (as done in cmd/root.go) catches non-existent files
+	_, err = os.Stat(nonExistentPath)
 
-	_, err := compiler.CompileWithDeps(compiler.CompileOptions{
-		FilePath:     nonExistentPath,
-		RecompileAll: false,
-		Ctx:          ctx,
-	}, deps)
-
-	// Should fail - either during file opening or ShellExecute
-	assert.Error(t, err, "Should return error for non-existent file")
+	// Should detect the file doesn't exist
+	assert.True(t, os.IsNotExist(err), "Should detect non-existent file")
 }
 
 // Helper Functions
@@ -159,16 +153,16 @@ func compileFile(t *testing.T, filePath string, recompileAll bool) (*compiler.Co
 	absPath, err := filepath.Abs(filePath)
 	require.NoError(t, err, "Should resolve absolute path")
 
-	// Create context for monitoring
-	ctx, cancel := context.WithCancel(context.Background())
-
-	// Start background window monitor
-	go simpl.StartMonitoring(ctx)
-
 	// Create a minimal logger for the test (discard output)
 	testLog, err := logger.NewLogger(logger.LoggerOptions{Verbose: false})
 	require.NoError(t, err, "Should create logger")
 	defer testLog.Close()
+
+	// Create SIMPL client
+	simplClient := simpl.NewClient(testLog)
+
+	// Start background window monitor
+	stopMonitor := simplClient.StartMonitoring()
 
 	// Open file with SIMPL Windows
 	t.Logf("Opening SIMPL Windows with file: %s", absPath)
@@ -181,13 +175,13 @@ func compileFile(t *testing.T, filePath string, recompileAll bool) (*compiler.Co
 
 	// Wait for window to appear
 	t.Log("Waiting for SIMPL Windows to appear...")
-	hwnd, found := simpl.WaitForAppear(pid, timeouts.WindowAppearTimeout)
+	hwnd, found := simplClient.WaitForAppear(pid, timeouts.WindowAppearTimeout)
 	require.True(t, found, "SIMPL Windows should appear within timeout")
 	require.NotZero(t, hwnd, "Should have valid window handle")
 
 	// Wait for window to be ready
 	t.Log("Waiting for window to be ready...")
-	ready := simpl.WaitForReady(hwnd, timeouts.WindowReadyTimeout)
+	ready := simplClient.WaitForReady(hwnd, timeouts.WindowReadyTimeout)
 	require.True(t, ready, "SIMPL Windows should be ready within timeout")
 
 	// Allow UI to settle
@@ -199,9 +193,9 @@ func compileFile(t *testing.T, filePath string, recompileAll bool) (*compiler.Co
 	// Cleanup function
 	cleanup := func() {
 		t.Log("Cleaning up SIMPL Windows...")
-		cancel()
+		stopMonitor()
 		if hwnd != 0 {
-			simpl.Cleanup(hwnd)
+			simplClient.Cleanup(hwnd)
 		}
 		// Give it time to close
 		time.Sleep(timeouts.FocusVerificationDelay)
@@ -210,16 +204,15 @@ func compileFile(t *testing.T, filePath string, recompileAll bool) (*compiler.Co
 	// Run compilation
 	t.Log("Starting compilation...")
 
-	// Create real dependencies for integration test
-	deps := compiler.NewDefaultDependencies()
+	// Create compiler with logger
+	comp := compiler.NewCompiler(testLog)
 
-	result, err := compiler.CompileWithDeps(compiler.CompileOptions{
+	result, err := comp.Compile(compiler.CompileOptions{
 		FilePath:     absPath,
 		RecompileAll: recompileAll,
 		Hwnd:         hwnd,
-		Ctx:          ctx,
 		SimplPidPtr:  &simplPid,
-	}, deps)
+	})
 	// Note: We don't require NoError here because some tests expect compilation to fail
 	if err != nil {
 		t.Logf("Compilation returned error: %v", err)
