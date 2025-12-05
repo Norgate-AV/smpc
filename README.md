@@ -124,20 +124,49 @@ compilation completes. You can view the compilation logs afterward using `smpc -
 ### CI/CD Environments
 
 For automated builds in CI/CD pipelines (GitHub Actions, Jenkins, etc.), UAC prompts will block
-execution. There are two approaches to handle this:
+execution. Additionally, **UI automation requires access to an interactive desktop session**.
 
-#### Option 1: Run CI Agent with Administrator Privileges
+#### Critical Requirement: Interactive Desktop Session
 
-Configure your CI agent or runner to execute with administrator privileges. This allows UAC prompts
-to be automatically approved.
+GitHub Actions runners (and most CI agents) typically run as Windows services, which execute in
+**Session 0** (a non-interactive background session). SIMPL Windows launches in an interactive user
+session (Session 1+), and services in Session 0 cannot detect or interact with UI windows in other
+sessions due to Windows session isolation.
 
-#### Option 2: Disable UAC
+**This will cause UI automation to fail** - the runner can launch SIMPL Windows, but cannot detect
+its window or send keyboard commands.
 
-Disable UAC on the build machine to prevent interactive prompts. Refer to your Windows
-documentation or system administrator for the appropriate method for your environment.
+#### Recommended CI Runner Setup
 
-Both approaches are necessary workarounds for automating SIMPL Windows compilation, which requires
-elevated privileges to interact with the application's UI.
+For UI automation to work, configure a dedicated runner with interactive session access:
+
+1. **Create a dedicated local administrator account** for the CI runner (e.g., `ci-runner`)
+
+2. **Do NOT install the runner as a Windows service**
+   - If already installed as a service, remove it first
+   - Interactive session access is incompatible with service execution
+
+3. **Configure automatic login** for the runner account on boot
+
+4. **Start the runner using a Windows scheduled task** triggered at user login
+   - The task must run with highest privileges in an interactive session
+   - Configure the runner to start when the dedicated account logs in
+
+#### UAC Handling
+
+Configure your CI runner to execute with administrator privileges to automatically approve UAC
+prompts, or disable UAC on the build machine. Refer to your Windows documentation or system
+administrator for the appropriate method for your environment.
+
+#### Alternative: Separate Runner Instances
+
+You can run two runner instances on the same machine:
+
+- **Service runner**: For standard builds/tests (installed as Windows service)
+- **Interactive runner**: For UI automation (scheduled task with auto-login)
+
+Use different runner names and labels (e.g., `runs-on: [self-hosted, windows, ui-automation]`) to
+route UI automation jobs to the interactive runner.
 
 ## LICENSE
 
