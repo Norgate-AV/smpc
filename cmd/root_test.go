@@ -382,19 +382,12 @@ func captureCommandOutput(_ *testing.T, args []string) string {
 func TestExecutionContext_ExitFuncInjectable(t *testing.T) {
 	t.Parallel()
 
-	// Create a mock logger
-	log := &logger.NoOpLogger{}
-
 	// Track if exit was called and with what code
 	exitCalled := false
 	var exitCode int
 
 	// Create execution context with mock exit function
 	ctx := &ExecutionContext{
-		simplPid:    12345,
-		simplHwnd:   67890,
-		log:         log,
-		simplClient: nil, // Not needed for this test
 		exitFunc: func(code int) {
 			exitCalled = true
 			exitCode = code

@@ -89,7 +89,7 @@ func handleLogsFlag(cfg *Config, exitFunc func(int)) error {
 }
 
 // initializeLogger creates a logger and logs startup information
-func initializeLogger(cfg *Config, args []string) (logger.LoggerInterface, error) {
+func initializeLogger(cfg *Config) (logger.LoggerInterface, error) {
 	log, err := logger.NewLogger(logger.LoggerOptions{
 		Verbose:  cfg.Verbose,
 		Compress: true,
@@ -275,7 +275,7 @@ func Execute(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("file path required")
 	}
 
-	log, err := initializeLogger(cfg, args)
+	log, err := initializeLogger(cfg)
 	if err != nil {
 		return err
 	}

@@ -1,5 +1,6 @@
 {
     "github-actions.workflows.pinned.workflows": [
         ".github/workflows/ci.yml"
-    ]
+    ],
+    "go.buildTags": "integration"
 }
