@@ -137,7 +137,7 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 
 	var success bool
 	if opts.RecompileAll {
-		c.log.Info("Triggering Recompile All (Alt+F12)")
+		// c.log.Info("Triggering Recompile All (Alt+F12)")
 		// Try SendInput first (modern API, atomic operation)
 		success = c.deps.Keyboard.SendAltF12WithSendInput()
 		if !success {
@@ -147,7 +147,7 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 			c.log.Debug("SendAltF12WithSendInput succeeded")
 		}
 	} else {
-		c.log.Info("Triggering compile (F12)")
+		// c.log.Info("Triggering compile (F12)")
 		// Try SendInput first (modern API, atomic operation)
 		success = c.deps.Keyboard.SendF12WithSendInput()
 		if !success {
@@ -210,6 +210,7 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 
 			// Log messages - only show header if there are actual messages to display
 			if len(errorMsgs) > 0 {
+				c.log.Info("")
 				c.log.Info("Error messages:")
 				for i, msg := range errorMsgs {
 					c.log.Info(fmt.Sprintf("  %d. %s", i+1, msg),
@@ -220,6 +221,7 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 			}
 
 			if len(warningMsgs) > 0 {
+				c.log.Info("")
 				c.log.Info("Warning messages:")
 				for i, msg := range warningMsgs {
 					c.log.Info(fmt.Sprintf("  %d. %s", i+1, msg))
@@ -227,10 +229,16 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 			}
 
 			if len(noticeMsgs) > 0 {
+				c.log.Info("")
 				c.log.Info("Notice messages:")
 				for i, msg := range noticeMsgs {
 					c.log.Info(fmt.Sprintf("  %d. %s", i+1, msg))
 				}
+			}
+
+			// Add trailing blank line if any messages were displayed
+			if len(errorMsgs) > 0 || len(warningMsgs) > 0 || len(noticeMsgs) > 0 {
+				c.log.Info("")
 			}
 		}
 	}
@@ -261,7 +269,7 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 	if opts.Hwnd != 0 {
 		c.deps.WindowMgr.CloseWindow(opts.Hwnd, "SIMPL Windows")
 		time.Sleep(timeouts.CleanupDelay)
-		c.log.Info("SIMPL Windows closed")
+		// c.log.Info("SIMPL Windows closed")
 	}
 
 	if result.HasErrors {

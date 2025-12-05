@@ -184,7 +184,6 @@ func (c *Client) WaitForAppear(targetPid uint32, timeout time.Duration) (uintptr
 		result := c.findWindowWithTracking(targetPid, true, seenWindows)
 
 		if result.mainHwnd != 0 {
-			c.log.Debug("Found main SIMPL Windows window", slog.String("title", result.mainTitle))
 			return result.mainHwnd, true
 		}
 

@@ -113,9 +113,16 @@ func (dh *DialogHandler) HandleCommentedOutSymbols() error {
 }
 
 func (dh *DialogHandler) WaitForCompiling() error {
-	_, ok := dh.waitForDialog("Compiling...", timeouts.DialogCompilingTimeout)
+	ev, ok := dh.waitForDialog("Compiling...", timeouts.DialogCompilingTimeout)
 	if !ok {
 		dh.log.Warn("Did not detect 'Compiling...' dialog within timeout")
+	} else {
+		dh.log.Debug("Dialog detected",
+			slog.String("title", ev.Title),
+			slog.Uint64("hwnd", uint64(ev.Hwnd)),
+		)
+
+		dh.log.Info("Compiling program...")
 	}
 
 	return nil

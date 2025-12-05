@@ -219,7 +219,7 @@ func waitForWindowReady(simplClient *simpl.Client, pid uint32, log logger.Logger
 	}
 
 	// Small extra delay to allow UI to finish settling
-	log.Debug("Waiting a few extra seconds for UI to settle...")
+	log.Info("Waiting a few extra seconds for UI to settle...")
 	time.Sleep(timeouts.UISettlingDelay)
 
 	return hwnd, nil
@@ -245,22 +245,11 @@ func runCompilation(absPath string, hwnd uintptr, pidPtr *uint32, cfg *Config, l
 
 // displayCompilationResults shows the compilation summary to the user
 func displayCompilationResults(result *compiler.CompileResult, log logger.LoggerInterface) {
-	log.Info("=== Compile Summary ===")
-	if result.Errors > 0 {
-		log.Info(fmt.Sprintf("Errors: %d", result.Errors))
-	}
-
-	log.Info(fmt.Sprintf("Warnings: %d", result.Warnings))
-	log.Info(fmt.Sprintf("Notices: %d", result.Notices))
-	log.Info(fmt.Sprintf("Compile Time: %.2f seconds", result.CompileTime))
-	log.Info("=======================")
-
-	// Also log structured data to file
 	log.Info("Compilation complete",
 		slog.Int("errors", result.Errors),
 		slog.Int("warnings", result.Warnings),
 		slog.Int("notices", result.Notices),
-		slog.Float64("compileTime", result.CompileTime),
+		slog.String("compileTime", fmt.Sprintf("%.2fs", result.CompileTime)),
 	)
 }
 
