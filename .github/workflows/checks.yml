@@ -75,7 +75,7 @@ jobs:
 
   integration:
     name: Integration Tests
-    runs-on: [self-hosted, windows, server]
+    runs-on: [self-hosted, windows, server, ui]
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
