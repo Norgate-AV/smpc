@@ -1,16 +1,37 @@
-TARGET=smpc.exe
+APP_NAME := smpc
+TARGET=$(APP_NAME).exe
 
-ENTRY_POINT=main.go
+SRC_DIR := .
+BUILD_DIR := bin
+DIST_DIR := dist
+COVERAGE_DIR := .coverage
 
-BUILD_DIR=bin
+GO_MODULE := github.com/Norgate-AV/$(APP_NAME)
+
+# Version information (from git tags and commit)
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+BUILD_TIME := $(shell git log -1 --format=%cI 2>/dev/null || echo unknown)
+
+CGO_ENABLED := 0
+BUILD_TAGS := netgo osusergo
+LDFLAGS_BASE := -s -w -buildid= -X $(GO_MODULE)/internal/version.Version=$(VERSION) \
+								-X $(GO_MODULE)/internal/version.Commit=$(COMMIT) \
+								-X $(GO_MODULE)/internal/version.BuildTime=$(BUILD_TIME)
+LDFLAGS := -ldflags "$(LDFLAGS_BASE) -extldflags '-static'"
 
 .PHONY: build
 build: clean
-	go build -o $(BUILD_DIR)/$(TARGET) $(ENTRY_POINT)
+	CGO_ENABLED=$(CGO_ENABLED) go build \
+								$(LDFLAGS) \
+								-tags "$(BUILD_TAGS)" \
+								-trimpath \
+								-o $(BUILD_DIR)/$(TARGET) \
+								$(SRC_DIR)
 
 .PHONY: clean
 clean:
-	@powershell -Command "if (Test-Path $(BUILD_DIR)) { Remove-Item -Recurse -Force $(BUILD_DIR) }"
+	rm -rf $(BUILD_DIR) $(DIST_DIR) $(COVERAGE_DIR)
 
 .PHONY: install
 install: build
@@ -22,9 +43,9 @@ test:
 
 .PHONY: test-coverage
 test-coverage:
-	@powershell -Command "if (-not (Test-Path .coverage)) { New-Item -ItemType Directory -Path .coverage | Out-Null }"
-	go test ./... -coverprofile=.coverage/coverage.out
-	go tool cover -html=.coverage/coverage.out -o .coverage/coverage.html
+	@mkdir -p $(COVERAGE_DIR)
+	go test ./... -coverprofile=$(COVERAGE_DIR)/coverage.out
+	go tool cover -html=$(COVERAGE_DIR)/coverage.out -o $(COVERAGE_DIR)/coverage.html
 
 .PHONY: test-integration
 test-integration:
