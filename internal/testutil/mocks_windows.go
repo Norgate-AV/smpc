@@ -133,6 +133,35 @@ func (m *MockWindowManager) WithChildInfosForHwnd(hwnd uintptr, infos ...windows
 	return m
 }
 
+// SendEventsToMonitor sends a sequence of events to windows.MonitorCh for event-driven testing
+// This simulates the background window monitor sending events in real-time
+func SendEventsToMonitor(events ...windows.WindowEvent) {
+	// Ensure the channel exists
+	if windows.MonitorCh == nil {
+		windows.MonitorCh = make(chan windows.WindowEvent, 64)
+	}
+
+	// Send events in a goroutine to avoid blocking
+	go func() {
+		for _, ev := range events {
+			windows.MonitorCh <- ev
+		}
+	}()
+}
+
+// SetupMonitorChannel initializes the MonitorCh for testing
+func SetupMonitorChannel() {
+	windows.MonitorCh = make(chan windows.WindowEvent, 64)
+}
+
+// CleanupMonitorChannel cleans up the MonitorCh after testing
+func CleanupMonitorChannel() {
+	if windows.MonitorCh != nil {
+		close(windows.MonitorCh)
+		windows.MonitorCh = nil
+	}
+}
+
 // MockKeyboardInjector
 type MockKeyboardInjector struct {
 	SendF12Called                 bool

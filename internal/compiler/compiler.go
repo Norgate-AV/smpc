@@ -3,6 +3,7 @@ package compiler
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/Norgate-AV/smpc/internal/interfaces"
@@ -166,80 +167,22 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 	var compileTime float64
 
 	if pid != 0 {
-		// Check for fatal "Incomplete Symbols" error
-		if err := c.deps.DialogHandler.HandleIncompleteSymbols(); err != nil {
-			return nil, err
-		}
-
-		// Handle save prompts and confirmations
-		if err := c.deps.DialogHandler.HandleConvertCompile(); err != nil {
-			return nil, err
-		}
-
-		if err := c.deps.DialogHandler.HandleCommentedOutSymbols(); err != nil {
-			return nil, err
-		}
-
-		// Wait for compilation to start
-		if err := c.deps.DialogHandler.WaitForCompiling(); err != nil {
-			return nil, err
-		}
-
-		// Parse the Compile Complete dialog
+		// Use event-driven dialog handling
 		var err error
-		compileCompleteHwnd, warnings, notices, errors, compileTime, err = c.deps.DialogHandler.ParseCompileComplete()
+		var warningMsgs, noticeMsgs, errorMsgs []string
+		compileCompleteHwnd, warnings, notices, errors, compileTime, warningMsgs, noticeMsgs, errorMsgs, err = c.handleCompilationEvents()
 		if err != nil {
 			return nil, err
 		}
 
-		// Parse detailed messages if there are any warnings, notices, or errors
-		if warnings > 0 || notices > 0 || errors > 0 {
-			warningMsgs, noticeMsgs, errorMsgs, err := c.deps.DialogHandler.ParseProgramCompilation()
-			if err != nil {
-				return nil, err
-			}
+		// Store detailed messages in result
+		result.ErrorMessages = errorMsgs
+		result.WarningMessages = warningMsgs
+		result.NoticeMessages = noticeMsgs
 
-			result.ErrorMessages = errorMsgs
-			result.WarningMessages = warningMsgs
-			result.NoticeMessages = noticeMsgs
-
-			// If we got additional errors from the dialog, update hasErrors
-			if len(errorMsgs) > 0 {
-				result.HasErrors = true
-			}
-
-			// Log messages - only show header if there are actual messages to display
-			if len(errorMsgs) > 0 {
-				c.log.Info("")
-				c.log.Info("Error messages:")
-				for i, msg := range errorMsgs {
-					c.log.Info(fmt.Sprintf("  %d. %s", i+1, msg),
-						slog.Int("number", i+1),
-						slog.String("message", msg),
-					)
-				}
-			}
-
-			if len(warningMsgs) > 0 {
-				c.log.Info("")
-				c.log.Info("Warning messages:")
-				for i, msg := range warningMsgs {
-					c.log.Info(fmt.Sprintf("  %d. %s", i+1, msg))
-				}
-			}
-
-			if len(noticeMsgs) > 0 {
-				c.log.Info("")
-				c.log.Info("Notice messages:")
-				for i, msg := range noticeMsgs {
-					c.log.Info(fmt.Sprintf("  %d. %s", i+1, msg))
-				}
-			}
-
-			// Add trailing blank line if any messages were displayed
-			if len(errorMsgs) > 0 || len(warningMsgs) > 0 || len(noticeMsgs) > 0 {
-				c.log.Info("")
-			}
+		// Update hasErrors if we found error messages
+		if len(errorMsgs) > 0 {
+			result.HasErrors = true
 		}
 	}
 
@@ -277,4 +220,228 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 	}
 
 	return result, nil
+}
+
+// handleCompilationEvents uses an event-driven approach to respond to dialogs as they appear
+func (c *Compiler) handleCompilationEvents() (compileCompleteHwnd uintptr, warnings, notices, errors int, compileTime float64, warningMsgs, noticeMsgs, errorMsgs []string, err error) {
+	// Maximum time to wait for compilation to complete
+	timeout := time.NewTimer(5 * time.Minute)
+	defer timeout.Stop()
+
+	// Track what we've seen and what we're waiting for
+	var (
+		compilingDetected       bool
+		compileCompleteDetected bool
+		programCompHwnd         uintptr
+	)
+
+	c.log.Debug("Entering event-driven dialog monitoring loop")
+
+	// Event loop - respond to dialogs as they appear in real-time
+	for {
+		select {
+		case ev := <-windows.MonitorCh:
+			c.log.Debug("Received window event",
+				slog.String("title", ev.Title),
+				slog.Uint64("hwnd", uint64(ev.Hwnd)),
+			)
+
+			// Handle each dialog type as it appears
+			switch ev.Title {
+			case "Incomplete Symbols":
+				// Fatal error - compilation cannot proceed
+				c.log.Error("ERROR: Incomplete Symbols detected", slog.String("title", ev.Title))
+				c.log.Info("The program contains incomplete symbols and cannot be compiled.")
+				c.log.Info("Please fix the incomplete symbols in SIMPL Windows before attempting to compile.")
+
+				// Extract error details
+				childInfos := c.deps.WindowMgr.CollectChildInfos(ev.Hwnd)
+				for _, ci := range childInfos {
+					if ci.ClassName == "Edit" && len(ci.Text) > 50 {
+						c.log.Info("Details", slog.String("text", ci.Text))
+						break
+					}
+				}
+
+				return 0, 0, 0, 0, 0, nil, nil, nil, fmt.Errorf("program contains incomplete symbols and cannot be compiled")
+
+			case "Convert/Compile":
+				// Save prompt - auto-confirm
+				c.log.Debug("Handling 'Convert/Compile' dialog")
+				_ = c.deps.WindowMgr.SetForeground(ev.Hwnd)
+				time.Sleep(timeouts.DialogResponseDelay)
+				c.deps.Keyboard.SendEnter()
+				c.log.Info("Auto-confirmed save prompt")
+
+			case "Commented out Symbols and/or Devices":
+				// Confirmation dialog - auto-confirm
+				c.log.Debug("Handling 'Commented out Symbols and/or Devices' dialog")
+				_ = c.deps.WindowMgr.SetForeground(ev.Hwnd)
+				time.Sleep(timeouts.DialogResponseDelay)
+				c.deps.Keyboard.SendEnter()
+				c.log.Info("Auto-confirmed commented symbols dialog")
+
+			case "Compiling...":
+				// Compilation in progress
+				if !compilingDetected {
+					c.log.Debug("Detected 'Compiling...' dialog")
+					c.log.Info("Compiling program...")
+					compilingDetected = true
+				}
+
+			case "Compile Complete":
+				// Compilation finished - parse results
+				if !compileCompleteDetected {
+					c.log.Debug("Detected 'Compile Complete' dialog - parsing results")
+					compileCompleteHwnd = ev.Hwnd
+
+					// Parse statistics from dialog
+					childInfos := c.deps.WindowMgr.CollectChildInfos(ev.Hwnd)
+					for _, ci := range childInfos {
+						text := strings.ReplaceAll(ci.Text, "\r\n", "\n")
+						lines := strings.Split(text, "\n")
+
+						for _, line := range lines {
+							line = strings.TrimSpace(line)
+							if line == "" {
+								continue
+							}
+
+							if n, ok := ParseStatLine(line, "Program Warnings"); ok {
+								warnings = n
+							}
+
+							if n, ok := ParseStatLine(line, "Program Notices"); ok {
+								notices = n
+							}
+
+							if n, ok := ParseStatLine(line, "Program Errors"); ok {
+								errors = n
+							}
+
+							if secs, ok := ParseCompileTimeLine(line); ok {
+								compileTime = secs
+							}
+						}
+					}
+
+					compileCompleteDetected = true
+				}
+
+			case "Program Compilation":
+				// Detailed error/warning/notice messages
+				if programCompHwnd == 0 {
+					c.log.Debug("Detected 'Program Compilation' dialog")
+					programCompHwnd = ev.Hwnd
+				}
+
+			case "Operation Complete":
+				// Sometimes appears - close it
+				c.log.Debug("Detected 'Operation Complete' dialog - closing")
+				c.deps.WindowMgr.CloseWindow(ev.Hwnd, ev.Title)
+				time.Sleep(timeouts.WindowMessageDelay)
+			}
+
+			// If we have both "Compile Complete" and (optionally) "Program Compilation", we're done
+			if compileCompleteDetected {
+				// If there are warnings/notices/errors, wait briefly for Program Compilation dialog
+				if (warnings > 0 || notices > 0 || errors > 0) && programCompHwnd == 0 {
+					time.Sleep(500 * time.Millisecond)
+					continue
+				}
+
+				// Parse detailed messages if we have the Program Compilation dialog
+				var detailedWarnings, detailedNotices, detailedErrors []string
+				if programCompHwnd != 0 {
+					detailedWarnings, detailedNotices, detailedErrors = c.parseDetailedMessages(programCompHwnd)
+
+					// Log the messages
+					c.logCompilationMessages(detailedErrors, detailedWarnings, detailedNotices)
+				}
+
+				// Compilation complete
+				return compileCompleteHwnd, warnings, notices, errors, compileTime, detailedWarnings, detailedNotices, detailedErrors, nil
+			}
+
+		case <-timeout.C:
+			c.log.Error("Compilation timeout: did not complete within 5 minutes")
+			return 0, 0, 0, 0, 0, nil, nil, nil, fmt.Errorf("compilation timeout: did not detect 'Compile Complete' dialog within 5 minutes")
+		}
+	}
+}
+
+// parseDetailedMessages extracts error/warning/notice messages from Program Compilation dialog
+func (c *Compiler) parseDetailedMessages(hwnd uintptr) (warnings, notices, errors []string) {
+	childInfos := c.deps.WindowMgr.CollectChildInfos(hwnd)
+
+	// Extract messages from ListBox
+	for _, ci := range childInfos {
+		if ci.ClassName != "ListBox" || len(ci.Items) == 0 {
+			continue
+		}
+
+		for _, line := range ci.Items {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+
+			lineUpper := strings.ToUpper(line)
+			switch {
+			case strings.HasPrefix(lineUpper, "ERROR"):
+				errors = append(errors, line)
+			case strings.HasPrefix(lineUpper, "WARNING"):
+				warnings = append(warnings, line)
+			case strings.HasPrefix(lineUpper, "NOTICE"):
+				notices = append(notices, line)
+			default:
+				// Continuation of previous message
+				switch {
+				case len(errors) > 0:
+					errors[len(errors)-1] += " " + line
+				case len(warnings) > 0:
+					warnings[len(warnings)-1] += " " + line
+				case len(notices) > 0:
+					notices[len(notices)-1] += " " + line
+				}
+			}
+		}
+	}
+
+	return warnings, notices, errors
+}
+
+// logCompilationMessages logs error/warning/notice messages with proper formatting
+func (c *Compiler) logCompilationMessages(errorMsgs, warningMsgs, noticeMsgs []string) {
+	if len(errorMsgs) > 0 {
+		c.log.Info("")
+		c.log.Info("Error messages:")
+		for i, msg := range errorMsgs {
+			c.log.Info(fmt.Sprintf("  %d. %s", i+1, msg),
+				slog.Int("number", i+1),
+				slog.String("message", msg),
+			)
+		}
+	}
+
+	if len(warningMsgs) > 0 {
+		c.log.Info("")
+		c.log.Info("Warning messages:")
+		for i, msg := range warningMsgs {
+			c.log.Info(fmt.Sprintf("  %d. %s", i+1, msg))
+		}
+	}
+
+	if len(noticeMsgs) > 0 {
+		c.log.Info("")
+		c.log.Info("Notice messages:")
+		for i, msg := range noticeMsgs {
+			c.log.Info(fmt.Sprintf("  %d. %s", i+1, msg))
+		}
+	}
+
+	// Add trailing blank line if any messages were displayed
+	if len(errorMsgs) > 0 || len(warningMsgs) > 0 || len(noticeMsgs) > 0 {
+		c.log.Info("")
+	}
 }

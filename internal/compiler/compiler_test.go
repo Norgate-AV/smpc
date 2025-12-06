@@ -11,26 +11,12 @@ import (
 )
 
 func TestCompiler_SuccessfulCompilation(t *testing.T) {
+	// Setup monitor channel for event-driven testing
+	testutil.SetupMonitorChannel()
+	defer testutil.CleanupMonitorChannel()
+
 	mockWin := testutil.NewMockWindowManager().
-		WithWaitOnMonitorResults(
-			// HandleOperationComplete - no dialog
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false},
-			// HandleIncompleteSymbols - no dialog
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false},
-			// HandleConvertCompile - no dialog
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false},
-			// HandleCommentedOutSymbols - no dialog
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false},
-			// WaitForCompiling - dialog appears
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{Hwnd: 0x1111, Title: "Compiling..."}, OK: true},
-			// ParseCompileComplete - dialog with stats
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{Hwnd: 0x2222, Title: "Compile Complete"}, OK: true},
-			// ParseProgramCompilation - no messages
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false},
-			// HandleConfirmation - no dialog
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false},
-		).
-		WithChildInfos(
+		WithChildInfosForHwnd(0x2222, // Compile Complete dialog
 			windows.ChildInfo{ClassName: "Static", Text: "Statistics"},
 			windows.ChildInfo{ClassName: "Edit", Text: "Program Errors: 0\r\nProgram Warnings: 0\r\nProgram Notices: 0\r\nCompile Time: 1.23 seconds\r\n"},
 		)
@@ -53,6 +39,13 @@ func TestCompiler_SuccessfulCompilation(t *testing.T) {
 		Hwnd:         0x9999,
 		RecompileAll: false,
 	}
+
+	// Send dialog events that will appear during compilation
+	testutil.SendEventsToMonitor(
+		windows.WindowEvent{Hwnd: 0x1111, Title: "Compiling..."},
+		windows.WindowEvent{Hwnd: 0x2222, Title: "Compile Complete"},
+	)
+
 	result, err := compiler.Compile(opts)
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
@@ -80,18 +73,11 @@ func TestCompiler_SuccessfulCompilation(t *testing.T) {
 }
 
 func TestCompiler_RecompileAll(t *testing.T) {
+	testutil.SetupMonitorChannel()
+	defer testutil.CleanupMonitorChannel()
+
 	mockWin := testutil.NewMockWindowManager().
-		WithWaitOnMonitorResults(
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleOperationComplete
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleIncompleteSymbols
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleConvertCompile
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleCommentedOutSymbols
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{Hwnd: 0x1111, Title: "Compiling..."}, OK: true},
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{Hwnd: 0x2222, Title: "Compile Complete"}, OK: true},
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // ParseProgramCompilation
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleConfirmation
-		).
-		WithChildInfos(
+		WithChildInfosForHwnd(0x2222,
 			windows.ChildInfo{ClassName: "Edit", Text: "Errors: 0\r\nWarnings: 0\r\nNotices: 0\r\n"},
 		)
 
@@ -115,6 +101,11 @@ func TestCompiler_RecompileAll(t *testing.T) {
 		RecompileAll: true, // Trigger Alt+F12 instead of F12
 	}
 
+	testutil.SendEventsToMonitor(
+		windows.WindowEvent{Hwnd: 0x1111, Title: "Compiling..."},
+		windows.WindowEvent{Hwnd: 0x2222, Title: "Compile Complete"},
+	)
+
 	result, err := compiler.Compile(opts)
 
 	assert.NoError(t, err)
@@ -128,17 +119,10 @@ func TestCompiler_RecompileAll(t *testing.T) {
 }
 
 func TestCompiler_WithWarnings(t *testing.T) {
+	testutil.SetupMonitorChannel()
+	defer testutil.CleanupMonitorChannel()
+
 	mockWin := testutil.NewMockWindowManager().
-		WithWaitOnMonitorResults(
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleOperationComplete
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleIncompleteSymbols
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleConvertCompile
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleCommentedOutSymbols
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{Hwnd: 0x1111, Title: "Compiling..."}, OK: true},
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{Hwnd: 0x2222, Title: "Compile Complete"}, OK: true},
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{Hwnd: 0x3333, Title: "Program Compilation"}, OK: true},
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleConfirmation
-		).
 		WithChildInfosForHwnd(0x2222, // Compile Complete dialog
 			windows.ChildInfo{ClassName: "Edit", Text: "Program Errors: 0\r\nProgram Warnings: 2\r\nProgram Notices: 1\r\n"},
 		).
@@ -167,6 +151,12 @@ func TestCompiler_WithWarnings(t *testing.T) {
 
 	opts := CompileOptions{Hwnd: 0x9999}
 
+	testutil.SendEventsToMonitor(
+		windows.WindowEvent{Hwnd: 0x1111, Title: "Compiling..."},
+		windows.WindowEvent{Hwnd: 0x2222, Title: "Compile Complete"},
+		windows.WindowEvent{Hwnd: 0x3333, Title: "Program Compilation"},
+	)
+
 	result, err := compiler.Compile(opts)
 
 	assert.NoError(t, err)
@@ -181,17 +171,10 @@ func TestCompiler_WithWarnings(t *testing.T) {
 }
 
 func TestCompiler_WithErrors(t *testing.T) {
+	testutil.SetupMonitorChannel()
+	defer testutil.CleanupMonitorChannel()
+
 	mockWin := testutil.NewMockWindowManager().
-		WithWaitOnMonitorResults(
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleOperationComplete
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleIncompleteSymbols
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleConvertCompile
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleCommentedOutSymbols
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{Hwnd: 0x1111, Title: "Compiling..."}, OK: true},
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{Hwnd: 0x2222, Title: "Compile Complete"}, OK: true},
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{Hwnd: 0x3333, Title: "Program Compilation"}, OK: true},
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleConfirmation
-		).
 		WithChildInfosForHwnd(0x2222, // Compile Complete dialog
 			windows.ChildInfo{ClassName: "Edit", Text: "Program Errors: 3\r\nProgram Warnings: 0\r\nProgram Notices: 0\r\n"},
 		).
@@ -220,6 +203,12 @@ func TestCompiler_WithErrors(t *testing.T) {
 
 	opts := CompileOptions{Hwnd: 0x9999}
 
+	testutil.SendEventsToMonitor(
+		windows.WindowEvent{Hwnd: 0x1111, Title: "Compiling..."},
+		windows.WindowEvent{Hwnd: 0x2222, Title: "Compile Complete"},
+		windows.WindowEvent{Hwnd: 0x3333, Title: "Program Compilation"},
+	)
+
 	result, err := compiler.Compile(opts)
 
 	// Compile returns an error when there are compile errors
@@ -234,11 +223,10 @@ func TestCompiler_WithErrors(t *testing.T) {
 }
 
 func TestCompiler_IncompleteSymbols(t *testing.T) {
+	testutil.SetupMonitorChannel()
+	defer testutil.CleanupMonitorChannel()
+
 	mockWin := testutil.NewMockWindowManager().
-		WithWaitOnMonitorResults(
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleOperationComplete
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{Hwnd: 0xABCD, Title: "Incomplete Symbols"}, OK: true},
-		).
 		WithChildInfos(
 			windows.ChildInfo{ClassName: "Edit", Text: "The program contains incomplete symbols and cannot be compiled."},
 		)
@@ -260,6 +248,10 @@ func TestCompiler_IncompleteSymbols(t *testing.T) {
 
 	opts := CompileOptions{Hwnd: 0x9999}
 
+	testutil.SendEventsToMonitor(
+		windows.WindowEvent{Hwnd: 0xABCD, Title: "Incomplete Symbols"},
+	)
+
 	result, err := compiler.Compile(opts)
 
 	assert.Error(t, err)
@@ -268,14 +260,10 @@ func TestCompiler_IncompleteSymbols(t *testing.T) {
 }
 
 func TestCompiler_CompileDialogTimeout(t *testing.T) {
-	mockWin := testutil.NewMockWindowManager().
-		WithWaitOnMonitorResults(
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleOperationComplete
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleIncompleteSymbols
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleConvertCompile
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleCommentedOutSymbols
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // WaitForCompiling - timeout
-		)
+	testutil.SetupMonitorChannel()
+	defer testutil.CleanupMonitorChannel()
+
+	mockWin := testutil.NewMockWindowManager()
 
 	mockKbd := testutil.NewMockKeyboardInjector()
 	mockCtrl := testutil.NewMockControlReader()
@@ -294,6 +282,8 @@ func TestCompiler_CompileDialogTimeout(t *testing.T) {
 
 	opts := CompileOptions{Hwnd: 0x9999}
 
+	// Don't send any events to trigger timeout
+
 	result, err := compiler.Compile(opts)
 
 	assert.Error(t, err)
@@ -302,12 +292,11 @@ func TestCompiler_CompileDialogTimeout(t *testing.T) {
 }
 
 func TestCompiler_NoPid(t *testing.T) {
+	testutil.SetupMonitorChannel()
+	defer testutil.CleanupMonitorChannel()
+
 	// When PID is 0, dialog monitoring should be skipped but compilation should still proceed
 	mockWin := testutil.NewMockWindowManager().
-		WithWaitOnMonitorResults(
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{Hwnd: 0x1111, Title: "Compiling..."}, OK: true},
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{Hwnd: 0x2222, Title: "Compile Complete"}, OK: true},
-		).
 		WithChildInfos(
 			windows.ChildInfo{ClassName: "Edit", Text: "Errors: 0\r\nWarnings: 0\r\nNotices: 0\r\n"},
 		)
@@ -329,6 +318,12 @@ func TestCompiler_NoPid(t *testing.T) {
 
 	opts := CompileOptions{Hwnd: 0x9999}
 
+	// PID=0 means no monitoring, so don't send events
+	testutil.SendEventsToMonitor(
+		windows.WindowEvent{Hwnd: 0x1111, Title: "Compiling..."},
+		windows.WindowEvent{Hwnd: 0x2222, Title: "Compile Complete"},
+	)
+
 	result, err := compiler.Compile(opts)
 
 	assert.NoError(t, err)
@@ -340,17 +335,10 @@ func TestCompiler_NoPid(t *testing.T) {
 }
 
 func TestCompiler_WithSavePrompts(t *testing.T) {
+	testutil.SetupMonitorChannel()
+	defer testutil.CleanupMonitorChannel()
+
 	mockWin := testutil.NewMockWindowManager().
-		WithWaitOnMonitorResults(
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleOperationComplete
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleIncompleteSymbols
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{Hwnd: 0x5555, Title: "Convert/Compile"}, OK: true},
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{Hwnd: 0x6666, Title: "Commented Out Symbols"}, OK: true},
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{Hwnd: 0x1111, Title: "Compiling..."}, OK: true},
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{Hwnd: 0x2222, Title: "Compile Complete"}, OK: true},
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // ParseProgramCompilation
-			testutil.WaitOnMonitorResult{Event: windows.WindowEvent{}, OK: false}, // HandleConfirmation
-		).
 		WithChildInfos(
 			windows.ChildInfo{ClassName: "Edit", Text: "Errors: 0\r\nWarnings: 0\r\nNotices: 0\r\n"},
 		)
@@ -371,6 +359,13 @@ func TestCompiler_WithSavePrompts(t *testing.T) {
 	compiler := NewCompilerWithDeps(log, deps)
 
 	opts := CompileOptions{Hwnd: 0x9999}
+
+	testutil.SendEventsToMonitor(
+		windows.WindowEvent{Hwnd: 0x5555, Title: "Convert/Compile"},
+		windows.WindowEvent{Hwnd: 0x6666, Title: "Commented Out Symbols"},
+		windows.WindowEvent{Hwnd: 0x1111, Title: "Compiling..."},
+		windows.WindowEvent{Hwnd: 0x2222, Title: "Compile Complete"},
+	)
 
 	result, err := compiler.Compile(opts)
 
