@@ -37,6 +37,7 @@ var (
 	procEnumWindows              = user32.NewProc("EnumWindows")
 	procGetWindowTextW           = user32.NewProc("GetWindowTextW")
 	procGetWindowThreadProcessId = user32.NewProc("GetWindowThreadProcessId")
+	procIsWindow                 = user32.NewProc("IsWindow")
 	procIsWindowVisible          = user32.NewProc("IsWindowVisible")
 	ProcSendMessageTimeoutW      = user32.NewProc("SendMessageTimeoutW")
 	procSendMessageW             = user32.NewProc("SendMessageW")

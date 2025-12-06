@@ -158,6 +158,12 @@ func GetClassName(hwnd uintptr) string {
 	return syscall.UTF16ToString(buf)
 }
 
+// IsWindow checks if a window handle is valid
+func IsWindow(hwnd uintptr) bool {
+	ret, _, _ := procIsWindow.Call(hwnd)
+	return ret != 0
+}
+
 // IsWindowVisible checks if a window is visible
 func IsWindowVisible(hwnd uintptr) bool {
 	ret, _, _ := procIsWindowVisible.Call(hwnd)

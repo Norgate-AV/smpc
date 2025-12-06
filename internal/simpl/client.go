@@ -208,10 +208,16 @@ func (c *Client) WaitForAppear(targetPid uint32, timeout time.Duration) (uintptr
 
 // Cleanup ensures SIMPL Windows is properly closed, with fallback to force termination
 func (c *Client) Cleanup(hwnd uintptr) {
-	c.log.Debug("Cleaning up...")
 	if hwnd == 0 {
 		return
 	}
+
+	// Check if the window still exists before attempting cleanup
+	if !windows.IsWindow(hwnd) {
+		return
+	}
+
+	c.log.Debug("Cleaning up...")
 
 	// Try to close gracefully
 	c.win.Window.CloseWindow(hwnd, "SIMPL Windows")
