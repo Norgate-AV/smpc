@@ -166,7 +166,7 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 		// Use event-driven dialog handling
 		var err error
 		var eventResult *CompileResult
-		compileCompleteHwnd, eventResult, err = c.handleCompilationEvents()
+		compileCompleteHwnd, eventResult, err = c.handleCompilationEvents(opts)
 		if err != nil {
 			return nil, err
 		}
@@ -205,7 +205,7 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 }
 
 // handleCompilationEvents uses an event-driven approach to respond to dialogs as they appear
-func (c *Compiler) handleCompilationEvents() (uintptr, *CompileResult, error) {
+func (c *Compiler) handleCompilationEvents(opts CompileOptions) (uintptr, *CompileResult, error) {
 	// Maximum time to wait for compilation to complete
 	timeout := time.NewTimer(timeouts.CompilationCompleteTimeout)
 	defer timeout.Stop()
@@ -270,7 +270,13 @@ func (c *Compiler) handleCompilationEvents() (uintptr, *CompileResult, error) {
 				// Compilation in progress
 				if !compilingDetected {
 					c.log.Debug("Detected 'Compiling...' dialog")
-					c.log.Info("Compiling program...")
+
+					if opts.RecompileAll {
+						c.log.Info("Compiling program... (Recompile All)")
+					} else {
+						c.log.Info("Compiling program...")
+					}
+
 					compilingDetected = true
 				}
 
