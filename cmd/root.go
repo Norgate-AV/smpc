@@ -31,11 +31,12 @@ type ExecutionContext struct {
 }
 
 var RootCmd = &cobra.Command{
-	Use:     "smpc <file-path>",
-	Short:   "smpc - Automate compilation of .smw files",
-	Version: version.GetVersion(),
-	Args:    validateArgs,
-	RunE:    Execute,
+	Use:          "smpc <file-path>",
+	Short:        "smpc - Automate compilation of .smw files",
+	Version:      version.GetVersion(),
+	Args:         validateArgs,
+	RunE:         Execute,
+	SilenceUsage: true, // Don't show usage on runtime errors
 }
 
 func init() {
