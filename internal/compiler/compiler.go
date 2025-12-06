@@ -138,7 +138,6 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 
 	var success bool
 	if opts.RecompileAll {
-		// c.log.Info("Triggering Recompile All (Alt+F12)")
 		// Try SendInput first (modern API, atomic operation)
 		success = c.deps.Keyboard.SendAltF12WithSendInput()
 		if !success {
@@ -148,7 +147,6 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 			c.log.Debug("SendAltF12WithSendInput succeeded")
 		}
 	} else {
-		// c.log.Info("Triggering compile (F12)")
 		// Try SendInput first (modern API, atomic operation)
 		success = c.deps.Keyboard.SendF12WithSendInput()
 		if !success {
@@ -163,34 +161,19 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 
 	// Only attempt dialog handling if we have a valid PID
 	var compileCompleteHwnd uintptr
-	var warnings, notices, errors int
-	var compileTime float64
 
 	if pid != 0 {
 		// Use event-driven dialog handling
 		var err error
-		var warningMsgs, noticeMsgs, errorMsgs []string
-		compileCompleteHwnd, warnings, notices, errors, compileTime, warningMsgs, noticeMsgs, errorMsgs, err = c.handleCompilationEvents()
+		var eventResult *CompileResult
+		compileCompleteHwnd, eventResult, err = c.handleCompilationEvents()
 		if err != nil {
 			return nil, err
 		}
 
-		// Store detailed messages in result
-		result.ErrorMessages = errorMsgs
-		result.WarningMessages = warningMsgs
-		result.NoticeMessages = noticeMsgs
-
-		// Update hasErrors if we found error messages
-		if len(errorMsgs) > 0 {
-			result.HasErrors = true
-		}
+		// Copy event result into our result
+		result = eventResult
 	}
-
-	result.Warnings = warnings
-	result.Notices = notices
-	result.Errors = errors
-	result.CompileTime = compileTime
-	result.HasErrors = errors > 0
 
 	// Close dialogs
 	c.log.Debug("Closing dialogs and SIMPL Windows...")
@@ -212,7 +195,6 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 	if opts.Hwnd != 0 {
 		c.deps.WindowMgr.CloseWindow(opts.Hwnd, "SIMPL Windows")
 		time.Sleep(timeouts.CleanupDelay)
-		// c.log.Info("SIMPL Windows closed")
 	}
 
 	if result.HasErrors {
@@ -223,15 +205,18 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 }
 
 // handleCompilationEvents uses an event-driven approach to respond to dialogs as they appear
-func (c *Compiler) handleCompilationEvents() (compileCompleteHwnd uintptr, warnings, notices, errors int, compileTime float64, warningMsgs, noticeMsgs, errorMsgs []string, err error) {
+func (c *Compiler) handleCompilationEvents() (uintptr, *CompileResult, error) {
 	// Maximum time to wait for compilation to complete
-	timeout := time.NewTimer(5 * time.Minute)
+	timeout := time.NewTimer(timeouts.CompilationCompleteTimeout)
 	defer timeout.Stop()
+
+	result := &CompileResult{}
 
 	// Track what we've seen and what we're waiting for
 	var (
 		compilingDetected       bool
 		compileCompleteDetected bool
+		compileCompleteHwnd     uintptr
 		programCompHwnd         uintptr
 	)
 
@@ -263,7 +248,7 @@ func (c *Compiler) handleCompilationEvents() (compileCompleteHwnd uintptr, warni
 					}
 				}
 
-				return 0, 0, 0, 0, 0, nil, nil, nil, fmt.Errorf("program contains incomplete symbols and cannot be compiled")
+				return 0, nil, fmt.Errorf("program contains incomplete symbols and cannot be compiled")
 
 			case "Convert/Compile":
 				// Save prompt - auto-confirm
@@ -308,19 +293,19 @@ func (c *Compiler) handleCompilationEvents() (compileCompleteHwnd uintptr, warni
 							}
 
 							if n, ok := ParseStatLine(line, "Program Warnings"); ok {
-								warnings = n
+								result.Warnings = n
 							}
 
 							if n, ok := ParseStatLine(line, "Program Notices"); ok {
-								notices = n
+								result.Notices = n
 							}
 
 							if n, ok := ParseStatLine(line, "Program Errors"); ok {
-								errors = n
+								result.Errors = n
 							}
 
 							if secs, ok := ParseCompileTimeLine(line); ok {
-								compileTime = secs
+								result.CompileTime = secs
 							}
 						}
 					}
@@ -345,27 +330,29 @@ func (c *Compiler) handleCompilationEvents() (compileCompleteHwnd uintptr, warni
 			// If we have both "Compile Complete" and (optionally) "Program Compilation", we're done
 			if compileCompleteDetected {
 				// If there are warnings/notices/errors, wait briefly for Program Compilation dialog
-				if (warnings > 0 || notices > 0 || errors > 0) && programCompHwnd == 0 {
+				if (result.Warnings > 0 || result.Notices > 0 || result.Errors > 0) && programCompHwnd == 0 {
 					time.Sleep(500 * time.Millisecond)
 					continue
 				}
 
 				// Parse detailed messages if we have the Program Compilation dialog
-				var detailedWarnings, detailedNotices, detailedErrors []string
 				if programCompHwnd != 0 {
-					detailedWarnings, detailedNotices, detailedErrors = c.parseDetailedMessages(programCompHwnd)
+					result.WarningMessages, result.NoticeMessages, result.ErrorMessages = c.parseDetailedMessages(programCompHwnd)
 
 					// Log the messages
-					c.logCompilationMessages(detailedErrors, detailedWarnings, detailedNotices)
+					c.logCompilationMessages(result.ErrorMessages, result.WarningMessages, result.NoticeMessages)
 				}
 
+				// Set HasErrors flag
+				result.HasErrors = result.Errors > 0 || len(result.ErrorMessages) > 0
+
 				// Compilation complete
-				return compileCompleteHwnd, warnings, notices, errors, compileTime, detailedWarnings, detailedNotices, detailedErrors, nil
+				return compileCompleteHwnd, result, nil
 			}
 
 		case <-timeout.C:
 			c.log.Error("Compilation timeout: did not complete within 5 minutes")
-			return 0, 0, 0, 0, 0, nil, nil, nil, fmt.Errorf("compilation timeout: did not detect 'Compile Complete' dialog within 5 minutes")
+			return 0, nil, fmt.Errorf("compilation timeout: did not detect 'Compile Complete' dialog within 5 minutes")
 		}
 	}
 }
