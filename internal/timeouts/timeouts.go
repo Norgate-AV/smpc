@@ -1,6 +1,3 @@
-// Package timeouts defines timing constants used throughout the application.
-// These values have been empirically determined for reliable interaction with
-// SIMPL Windows and the Windows API.
 package timeouts
 
 import "time"
@@ -50,26 +47,6 @@ const (
 	// DialogOperationCompleteTimeout is the maximum time to wait for the
 	// "Operation Complete" dialog to appear after initiating a compilation.
 	DialogOperationCompleteTimeout = 3 * time.Second
-
-	// DialogIncompleteSymbolsTimeout is the maximum time to wait for the
-	// "Incomplete Symbols" dialog to appear during compilation checks.
-	DialogIncompleteSymbolsTimeout = 2 * time.Second
-
-	// DialogConvertCompileTimeout is the maximum time to wait for the
-	// "Convert/Compile" dialog to appear.
-	DialogConvertCompileTimeout = 5 * time.Second
-
-	// DialogCommentedSymbolsTimeout is the maximum time to wait for the
-	// "Commented out Symbols and/or Devices" dialog to appear.
-	DialogCommentedSymbolsTimeout = 5 * time.Second
-
-	// DialogCompilingTimeout is the maximum time to wait for the "Compiling..."
-	// progress dialog to appear and complete.
-	DialogCompilingTimeout = 30 * time.Second
-
-	// DialogProgramCompilationTimeout is the maximum time to wait for the
-	// "Program Compilation" results dialog to appear.
-	DialogProgramCompilationTimeout = 10 * time.Second
 
 	// DialogConfirmationTimeout is the maximum time to wait for a
 	// confirmation dialog to appear.
