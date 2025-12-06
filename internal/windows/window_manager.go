@@ -37,33 +37,81 @@ func (w *windowManager) CloseWindow(hwnd uintptr, title string) {
 	time.Sleep(timeouts.WindowMessageDelay)
 }
 
-// SetForeground brings a window to the foreground
+// SetForeground brings a window to the foreground using AttachThreadInput technique
 func (w *windowManager) SetForeground(hwnd uintptr) bool {
-	// Restore window if minimized, then bring to foreground
+	// Restore window if minimized
 	ret, _, _ := procShowWindow.Call(hwnd, uintptr(SW_RESTORE))
 	w.log.Debug("ShowWindow(SW_RESTORE)", slog.Uint64("ret", uint64(ret)))
 
-	ret, _, err := procSetForegroundWindow.Call(hwnd)
-	if ret == 0 {
-		w.log.Debug("SetForegroundWindow failed", slog.Any("error", err))
+	// Try standard SetForegroundWindow first
+	ret, _, _ = procSetForegroundWindow.Call(hwnd)
+	if ret != 0 {
+		w.log.Debug("SetForegroundWindow succeeded (standard)")
+		return w.verifyForeground(hwnd)
+	}
+
+	w.log.Debug("Standard SetForegroundWindow failed, trying AttachThreadInput technique")
+
+	// Get current foreground window and its thread
+	fgHwnd, _, _ := procGetForegroundWindow.Call()
+	if fgHwnd == 0 || fgHwnd == hwnd {
+		w.log.Debug("No foreground window or already focused")
+		return true
+	}
+
+	// Get thread IDs
+	fgThreadID, _, _ := procGetWindowThreadProcessId.Call(fgHwnd, 0)
+	targetThreadID, _, _ := procGetWindowThreadProcessId.Call(hwnd, 0)
+
+	if fgThreadID == 0 || targetThreadID == 0 {
+		w.log.Warn("Could not get thread IDs",
+			slog.Uint64("fgThreadID", uint64(fgThreadID)),
+			slog.Uint64("targetThreadID", uint64(targetThreadID)))
 		return false
 	}
 
-	w.log.Debug("SetForegroundWindow succeeded")
+	w.log.Debug("Attaching threads",
+		slog.Uint64("fgThreadID", uint64(fgThreadID)),
+		slog.Uint64("targetThreadID", uint64(targetThreadID)))
 
-	// Give it a moment and verify
+	// Attach our thread to the foreground window's thread
+	ret, _, _ = procAttachThreadInput.Call(targetThreadID, fgThreadID, 1)
+	if ret == 0 {
+		w.log.Warn("AttachThreadInput failed")
+		return false
+	}
+
+	// Now SetForegroundWindow should work
+	ret, _, _ = procSetForegroundWindow.Call(hwnd)
+	success := ret != 0
+
+	// Detach threads
+	procAttachThreadInput.Call(targetThreadID, fgThreadID, 0)
+
+	if success {
+		w.log.Debug("SetForegroundWindow succeeded (with AttachThreadInput)")
+		return w.verifyForeground(hwnd)
+	}
+
+	w.log.Warn("SetForegroundWindow still failed after AttachThreadInput")
+	return false
+}
+
+// verifyForeground checks if the window is now in foreground
+func (w *windowManager) verifyForeground(hwnd uintptr) bool {
 	time.Sleep(timeouts.WindowMessageDelay)
+
 	fgHwnd, _, _ := procGetForegroundWindow.Call()
 	if fgHwnd == hwnd {
 		w.log.Debug("Window confirmed in foreground")
-	} else {
-		w.log.Warn("Different window in foreground",
-			slog.Uint64("expected", uint64(hwnd)),
-			slog.Uint64("got", uint64(fgHwnd)),
-		)
+		return true
 	}
 
-	return true
+	w.log.Warn("Different window in foreground",
+		slog.Uint64("expected", uint64(hwnd)),
+		slog.Uint64("got", uint64(fgHwnd)))
+
+	return false
 }
 
 // VerifyForegroundWindow checks if the specified window is currently in the foreground

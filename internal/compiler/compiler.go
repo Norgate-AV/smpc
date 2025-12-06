@@ -111,30 +111,27 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 
 	// Bring window to foreground and send compile keystroke
 	c.log.Debug("Bringing window to foreground")
-	_ = c.deps.WindowMgr.SetForeground(opts.Hwnd)
+	focusSuccess := c.deps.WindowMgr.SetForeground(opts.Hwnd)
+	if !focusSuccess {
+		c.log.Warn("SetForeground failed on first attempt, retrying...")
+		time.Sleep(500 * time.Millisecond)
 
-	c.log.Debug("Waiting for window to receive focus...")
+		focusSuccess = c.deps.WindowMgr.SetForeground(opts.Hwnd)
+		if !focusSuccess {
+			c.log.Error("Failed to bring window to foreground after retry")
+			return nil, fmt.Errorf("failed to bring SIMPL Windows to foreground - cannot send keystrokes")
+		}
+	}
+
 	time.Sleep(timeouts.FocusVerificationDelay)
 
 	// Verify the window is in the foreground before sending keystrokes
 	c.log.Debug("Verifying foreground window")
 	verified := c.deps.WindowMgr.VerifyForegroundWindow(opts.Hwnd, pid)
 	if !verified {
-		c.log.Warn("Window verification failed, attempting to set foreground again")
-		_ = c.deps.WindowMgr.SetForeground(opts.Hwnd)
-		time.Sleep(timeouts.WindowMessageDelay)
-		verified = c.deps.WindowMgr.VerifyForegroundWindow(opts.Hwnd, pid)
-		if !verified {
-			c.log.Error("Could not verify correct window is in foreground - keystrokes may not reach intended target")
-		} else {
-			c.log.Debug("Window verified on second attempt")
-		}
-	} else {
-		c.log.Debug("Window verification successful")
+		c.log.Error("Could not verify correct window is in foreground")
+		return nil, fmt.Errorf("wrong window in foreground - cannot safely send keystrokes")
 	}
-
-	// Send the appropriate keystroke to trigger compilation
-	c.log.Debug("Preparing to send keystroke")
 
 	var success bool
 	if opts.RecompileAll {
@@ -284,6 +281,7 @@ func (c *Compiler) handleCompilationEvents(opts CompileOptions) (uintptr, *Compi
 				// Compilation finished - parse results
 				if !compileCompleteDetected {
 					c.log.Debug("Detected 'Compile Complete' dialog - parsing results")
+					c.log.Info("Compilation complete")
 					compileCompleteHwnd = ev.Hwnd
 
 					// Parse statistics from dialog
@@ -323,6 +321,7 @@ func (c *Compiler) handleCompilationEvents(opts CompileOptions) (uintptr, *Compi
 				// Detailed error/warning/notice messages
 				if programCompHwnd == 0 {
 					c.log.Debug("Detected 'Program Compilation' dialog")
+					c.log.Info("Gathering detailed error/warning/notice messages...")
 					programCompHwnd = ev.Hwnd
 				}
 
