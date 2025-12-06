@@ -22,13 +22,14 @@ builds:
       - arm64
     flags:
       - -trimpath
-    gcflags:
-      - all=-l
+    tags:
+      - netgo
+      - osusergo
     ldflags:
-      - -s -w -X github.com/Norgate-AV/smpc/internal/version.Version={{.Version}}
-      - -X github.com/Norgate-AV/smpc/internal/version.Commit={{.Commit}}
-      - -X github.com/Norgate-AV/smpc/internal/version.Date={{.Date}}
-      - -X github.com/Norgate-AV/smpc/internal/version.BuiltBy=goreleaser
+      - -s -w -buildid= -X github.com/Norgate-AV/smpc/internal/version.version={{.Version}}
+      - -X github.com/Norgate-AV/smpc/internal/version.commit={{.Commit}}
+      - -X github.com/Norgate-AV/smpc/internal/version.date={{.Date}}
+      - -extldflags '-static'
 
 archives:
   - files:

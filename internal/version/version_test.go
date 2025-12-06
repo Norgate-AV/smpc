@@ -19,7 +19,7 @@ func TestGetFullVersion(t *testing.T) {
 	t.Parallel()
 
 	full := version.GetFullVersion()
-	assert.Contains(t, full, version.Version)
+	assert.Contains(t, full, version.GetVersion())
 	assert.Contains(t, full, "commit:")
 	assert.Contains(t, full, "built:")
 }
@@ -34,11 +34,18 @@ func TestVersionFormat(t *testing.T) {
 	}
 }
 
-func TestGetVersionReturnsVersionVariable(t *testing.T) {
+func TestGetCommit(t *testing.T) {
 	t.Parallel()
 
-	// GetVersion should return exactly the Version variable
-	assert.Equal(t, version.Version, version.GetVersion())
+	c := version.GetCommit()
+	assert.NotEmpty(t, c, "Commit should not be empty")
+}
+
+func TestGetDate(t *testing.T) {
+	t.Parallel()
+
+	d := version.GetDate()
+	assert.NotEmpty(t, d, "Date should not be empty")
 }
 
 func TestGetFullVersionFormat(t *testing.T) {
@@ -46,6 +53,6 @@ func TestGetFullVersionFormat(t *testing.T) {
 
 	// Verify the format of GetFullVersion matches expected pattern
 	full := version.GetFullVersion()
-	expected := version.Version + " (commit: " + version.Commit + ", built: " + version.Date + ")"
+	expected := version.GetVersion() + " (commit: " + version.GetCommit() + ", built: " + version.GetDate() + ")"
 	assert.Equal(t, expected, full)
 }

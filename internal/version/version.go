@@ -2,19 +2,29 @@ package version
 
 var (
 	// Version is the semantic version (injected at build time via -ldflags)
-	Version = "dev"
+	version = "dev"
 	// Commit is the git commit hash (injected at build time via -ldflags)
-	Commit = "none"
+	commit = "none"
 	// Date is the build date (injected at build time via -ldflags)
-	Date = "unknown"
+	date = "unknown"
 )
 
 // GetVersion returns the full version string
 func GetVersion() string {
-	return Version
+	return version
+}
+
+// Commit returns the git commit hash
+func GetCommit() string {
+	return commit
+}
+
+// Date returns the build date
+func GetDate() string {
+	return date
 }
 
 // GetFullVersion returns version with commit and date info
 func GetFullVersion() string {
-	return Version + " (commit: " + Commit + ", built: " + Date + ")"
+	return version + " (commit: " + commit + ", built: " + date + ")"
 }

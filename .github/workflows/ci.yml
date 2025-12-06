@@ -37,22 +37,11 @@ jobs:
       - name: Build optimized binary
         env:
           GOARCH: ${{ matrix.goarch }}
-        shell: pwsh
-        run: |
-          $VERSION = if (git describe --tags --always --dirty 2>$null) { git describe --tags --always --dirty } else { "dev" }
-          $COMMIT = if (git rev-parse --short HEAD 2>$null) { git rev-parse --short HEAD } else { "unknown" }
-          $DATE = if (git log -1 --format=%cI 2>$null) { git log -1 --format=%cI } else { "unknown" }
-
-          $env:CGO_ENABLED = "0"
-          go build `
-            -trimpath `
-            -ldflags "-s -w -X github.com/Norgate-AV/smpc/internal/version.Version=$VERSION -X github.com/Norgate-AV/smpc/internal/version.Commit=$COMMIT -X github.com/Norgate-AV/smpc/internal/version.Date=$DATE" `
-            -o "smpc.exe" `
-            .
+        run: make build
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: smpc-windows-${{ matrix.goarch }}
-          path: smpc.exe
+          path: bin/smpc.exe
           retention-days: 30

@@ -15,19 +15,19 @@ BUILD_TIME := $(shell git log -1 --format=%cI 2>/dev/null || echo unknown)
 
 CGO_ENABLED := 0
 BUILD_TAGS := netgo osusergo
-LDFLAGS_BASE := -s -w -buildid= -X $(GO_MODULE)/internal/version.Version=$(VERSION) \
-								-X $(GO_MODULE)/internal/version.Commit=$(COMMIT) \
-								-X $(GO_MODULE)/internal/version.BuildTime=$(BUILD_TIME)
+LDFLAGS_BASE := -s -w -buildid= -X $(GO_MODULE)/internal/version.version=$(VERSION) \
+								-X $(GO_MODULE)/internal/version.commit=$(COMMIT) \
+								-X $(GO_MODULE)/internal/version.date=$(BUILD_TIME)
 LDFLAGS := -ldflags "$(LDFLAGS_BASE) -extldflags '-static'"
 
 .PHONY: build
 build: clean
 	CGO_ENABLED=$(CGO_ENABLED) go build \
-								$(LDFLAGS) \
-								-tags "$(BUILD_TAGS)" \
-								-trimpath \
-								-o $(BUILD_DIR)/$(TARGET) \
-								$(SRC_DIR)
+	$(LDFLAGS) \
+	-tags "$(BUILD_TAGS)" \
+	-trimpath \
+	-o $(BUILD_DIR)/$(TARGET) \
+	$(SRC_DIR)
 
 .PHONY: clean
 clean:
