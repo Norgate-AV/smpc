@@ -14,6 +14,13 @@ import (
 	"github.com/Norgate-AV/smpc/internal/windows"
 )
 
+const (
+	// Message type constants for parsing detailed messages
+	msgTypeError   = "ERROR"
+	msgTypeWarning = "WARNING"
+	msgTypeNotice  = "NOTICE"
+)
+
 // CompileResult holds the results of a compilation
 type CompileResult struct {
 	Warnings        int
@@ -408,25 +415,25 @@ func (c *Compiler) parseDetailedMessages(hwnd uintptr) (warnings, notices, error
 			switch {
 			case strings.HasPrefix(lineUpper, "ERROR\t") || strings.HasPrefix(lineUpper, "ERROR "):
 				errors = append(errors, line)
-				lastType = "ERROR"
+				lastType = msgTypeError
 			case strings.HasPrefix(lineUpper, "WARNING\t") || strings.HasPrefix(lineUpper, "WARNING "):
 				warnings = append(warnings, line)
-				lastType = "WARNING"
+				lastType = msgTypeWarning
 			case strings.HasPrefix(lineUpper, "NOTICE\t") || strings.HasPrefix(lineUpper, "NOTICE "):
 				notices = append(notices, line)
-				lastType = "NOTICE"
+				lastType = msgTypeNotice
 			default:
 				// Continuation of previous message - append to the last type that was seen
 				switch lastType {
-				case "ERROR":
+				case msgTypeError:
 					if len(errors) > 0 {
 						errors[len(errors)-1] += " " + line
 					}
-				case "WARNING":
+				case msgTypeWarning:
 					if len(warnings) > 0 {
 						warnings[len(warnings)-1] += " " + line
 					}
-				case "NOTICE":
+				case msgTypeNotice:
 					if len(notices) > 0 {
 						notices[len(notices)-1] += " " + line
 					}

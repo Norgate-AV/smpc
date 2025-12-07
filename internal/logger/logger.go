@@ -241,10 +241,19 @@ func (h *ConsoleHandler) Handle(_ context.Context, r slog.Record) error {
 	}
 
 	// Build the message with attributes
-	// For Info level, don't include attributes (they're for log file only)
-	// For other levels (DEBUG/VERBOSE, WARN, ERROR), include attributes
+	// For Info level, include attributes UNLESS the message is an enumerated list item
+	// (which starts with spaces and a number like "  1. ERROR...")
+	// For other levels (DEBUG/VERBOSE, WARN, ERROR), always include attributes
 	msg := r.Message
-	if r.Level != slog.LevelInfo && r.NumAttrs() > 0 {
+
+	// Determine if we should include attributes
+	includeAttrs := r.NumAttrs() > 0
+	if r.Level == slog.LevelInfo {
+		// Don't include attributes for enumerated messages (starts with "  " followed by a digit)
+		includeAttrs = includeAttrs && !isEnumeratedMessage(msg)
+	}
+
+	if includeAttrs {
 		attrs := make([]string, 0, r.NumAttrs())
 
 		r.Attrs(func(a slog.Attr) bool {
@@ -271,6 +280,16 @@ func (h *ConsoleHandler) Handle(_ context.Context, r slog.Record) error {
 	}
 
 	return nil
+}
+
+// isEnumeratedMessage checks if a message is an enumerated list item
+// (e.g., "  1. ERROR...", "  2. WARNING...")
+func isEnumeratedMessage(msg string) bool {
+	if len(msg) < 4 {
+		return false
+	}
+	// Check for pattern: "  " followed by a digit
+	return msg[0] == ' ' && msg[1] == ' ' && msg[2] >= '0' && msg[2] <= '9'
 }
 
 // joinAttrs joins attributes with spaces
