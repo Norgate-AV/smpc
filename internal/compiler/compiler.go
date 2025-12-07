@@ -464,7 +464,6 @@ func (c *Compiler) handlePostCompilationEvents() error {
 
 	case <-timeout.C:
 		// Timeout is fine - dialog may not appear
-		c.log.Debug("No confirmation dialog detected (timeout)")
 	}
 
 	return nil
