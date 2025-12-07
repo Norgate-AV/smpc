@@ -19,6 +19,16 @@ const (
 	msgTypeError   = "ERROR"
 	msgTypeWarning = "WARNING"
 	msgTypeNotice  = "NOTICE"
+
+	// Dialog title constants
+	dialogIncompleteSymbols   = "Incomplete Symbols"
+	dialogConvertCompile      = "Convert/Compile"
+	dialogCommentedOutSymbols = "Commented out Symbols and/or Devices"
+	dialogCompiling           = "Compiling..."
+	dialogCompileComplete     = "Compile Complete"
+	dialogProgramCompilation  = "Program Compilation"
+	dialogOperationComplete   = "Operation Complete"
+	dialogConfirmation        = "Confirmation"
 )
 
 // CompileResult holds the results of a compilation
@@ -252,7 +262,7 @@ func (c *Compiler) handleCompilationEvents(opts CompileOptions) (uintptr, *Compi
 
 			// Handle each dialog type as it appears
 			switch ev.Title {
-			case "Incomplete Symbols":
+			case dialogIncompleteSymbols:
 				// Fatal error - compilation cannot proceed
 				c.log.Error("Incomplete Symbols detected", slog.String("title", ev.Title))
 				c.log.Info("The program contains incomplete symbols and cannot be compiled.")
@@ -280,7 +290,7 @@ func (c *Compiler) handleCompilationEvents(opts CompileOptions) (uintptr, *Compi
 					},
 				}, fmt.Errorf("program contains incomplete symbols and cannot be compiled")
 
-			case "Convert/Compile":
+			case dialogConvertCompile:
 				// Save prompt - auto-confirm
 				c.log.Debug("Handling 'Convert/Compile' dialog")
 				_ = c.windowMgr.SetForeground(ev.Hwnd)
@@ -288,7 +298,7 @@ func (c *Compiler) handleCompilationEvents(opts CompileOptions) (uintptr, *Compi
 				c.keyboard.SendEnter()
 				c.log.Info("Auto-confirmed save prompt")
 
-			case "Commented out Symbols and/or Devices":
+			case dialogCommentedOutSymbols:
 				// Confirmation dialog - auto-confirm
 				c.log.Debug("Handling 'Commented out Symbols and/or Devices' dialog")
 				_ = c.windowMgr.SetForeground(ev.Hwnd)
@@ -296,7 +306,7 @@ func (c *Compiler) handleCompilationEvents(opts CompileOptions) (uintptr, *Compi
 				c.keyboard.SendEnter()
 				c.log.Info("Auto-confirmed commented symbols dialog")
 
-			case "Compiling...":
+			case dialogCompiling:
 				// Compilation in progress
 				if !compilingDetected {
 					c.log.Debug("Detected 'Compiling...' dialog")
@@ -310,7 +320,7 @@ func (c *Compiler) handleCompilationEvents(opts CompileOptions) (uintptr, *Compi
 					compilingDetected = true
 				}
 
-			case "Compile Complete":
+			case dialogCompileComplete:
 				// Compilation finished - parse results
 				if !compileCompleteDetected {
 					c.log.Debug("Detected 'Compile Complete' dialog - parsing results")
@@ -349,7 +359,7 @@ func (c *Compiler) handleCompilationEvents(opts CompileOptions) (uintptr, *Compi
 					compileCompleteDetected = true
 				}
 
-			case "Program Compilation":
+			case dialogProgramCompilation:
 				// Detailed error/warning/notice messages
 				if programCompHwnd == 0 {
 					c.log.Debug("Detected 'Program Compilation' dialog")
@@ -357,7 +367,7 @@ func (c *Compiler) handleCompilationEvents(opts CompileOptions) (uintptr, *Compi
 					programCompHwnd = ev.Hwnd
 				}
 
-			case "Operation Complete":
+			case dialogOperationComplete:
 				// Sometimes appears - close it
 				c.log.Debug("Detected 'Operation Complete' dialog - closing")
 				c.windowMgr.CloseWindow(ev.Hwnd, ev.Title)
@@ -512,10 +522,10 @@ func (c *Compiler) handlePreCompilationDialogs() error {
 
 			// Handle dialogs that may block compilation
 			switch ev.Title {
-			case "Operation Complete":
+			case dialogOperationComplete:
 				c.log.Debug("Detected 'Operation Complete' dialog - closing")
 				c.log.Info("Handling pre-compilation 'Operation Complete' dialog")
-				c.windowMgr.CloseWindow(ev.Hwnd, "Operation Complete")
+				c.windowMgr.CloseWindow(ev.Hwnd, dialogOperationComplete)
 				time.Sleep(timeouts.WindowMessageDelay)
 
 			default:
@@ -543,7 +553,7 @@ func (c *Compiler) handlePostCompilationEvents() error {
 			slog.Uint64("hwnd", uint64(ev.Hwnd)))
 
 		// Only handle Confirmation dialog here
-		if ev.Title == "Confirmation" {
+		if ev.Title == dialogConfirmation {
 			c.log.Debug("Detected 'Confirmation' dialog - clicking No")
 			c.log.Info("Handling confirmation dialog")
 
