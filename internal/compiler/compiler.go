@@ -45,10 +45,11 @@ type CompileResult struct {
 
 // CompileOptions holds options for the compilation
 type CompileOptions struct {
-	FilePath     string
-	RecompileAll bool
-	Hwnd         uintptr
-	SimplPidPtr  *uint32 // Pointer to store PID for signal handlers
+	FilePath                      string
+	RecompileAll                  bool
+	Hwnd                          uintptr
+	SimplPidPtr                   *uint32 // Pointer to store PID for signal handlers
+	SkipPreCompilationDialogCheck bool    // For testing - skip the pre-compilation dialog check
 }
 
 // CompileDependencies holds all external dependencies for testing
@@ -156,7 +157,8 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 	}
 
 	// Handle any pre-compilation dialogs (like "Operation Complete") that may be blocking
-	if pid != 0 {
+	// Skip this in test mode since tests send all events upfront
+	if pid != 0 && !opts.SkipPreCompilationDialogCheck {
 		if err := c.handlePreCompilationDialogs(); err != nil {
 			c.log.Warn("Error handling pre-compilation dialogs", slog.Any("error", err))
 		}

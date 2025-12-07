@@ -135,18 +135,17 @@ func (m *MockWindowManager) WithChildInfosForHwnd(hwnd uintptr, infos ...windows
 
 // SendEventsToMonitor sends a sequence of events to windows.MonitorCh for event-driven testing
 // This simulates the background window monitor sending events in real-time
+// Events are sent synchronously to ensure they're in the channel before Compile() reads them
 func SendEventsToMonitor(events ...windows.WindowEvent) {
 	// Ensure the channel exists
 	if windows.MonitorCh == nil {
 		windows.MonitorCh = make(chan windows.WindowEvent, 64)
 	}
 
-	// Send events in a goroutine to avoid blocking
-	go func() {
-		for _, ev := range events {
-			windows.MonitorCh <- ev
-		}
-	}()
+	// Send events synchronously so they're immediately available
+	for _, ev := range events {
+		windows.MonitorCh <- ev
+	}
 }
 
 // SetupMonitorChannel initializes the MonitorCh for testing

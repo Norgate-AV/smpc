@@ -35,11 +35,14 @@ func TestCompiler_SuccessfulCompilation(t *testing.T) {
 
 	compiler := NewCompilerWithDeps(log, deps)
 	opts := CompileOptions{
-		Hwnd:         0x9999,
-		RecompileAll: false,
+		Hwnd:                          0x9999,
+		RecompileAll:                  false,
+		SkipPreCompilationDialogCheck: true,
 	}
 
 	// Send dialog events that will appear during compilation
+	// IMPORTANT: Must send BEFORE calling Compile() because handlePreCompilationDialogs
+	// checks the channel first
 	testutil.SendEventsToMonitor(
 		windows.WindowEvent{Hwnd: 0x1111, Title: "Compiling..."},
 		windows.WindowEvent{Hwnd: 0x2222, Title: "Compile Complete"},
@@ -95,8 +98,9 @@ func TestCompiler_RecompileAll(t *testing.T) {
 	compiler := NewCompilerWithDeps(log, deps)
 
 	opts := CompileOptions{
-		Hwnd:         0x9999,
-		RecompileAll: true, // Trigger Alt+F12 instead of F12
+		Hwnd:                          0x9999,
+		RecompileAll:                  true, // Trigger Alt+F12 instead of F12
+		SkipPreCompilationDialogCheck: true,
 	}
 
 	testutil.SendEventsToMonitor(
@@ -146,7 +150,10 @@ func TestCompiler_WithWarnings(t *testing.T) {
 
 	compiler := NewCompilerWithDeps(log, deps)
 
-	opts := CompileOptions{Hwnd: 0x9999}
+	opts := CompileOptions{
+		Hwnd:                          0x9999,
+		SkipPreCompilationDialogCheck: true,
+	}
 
 	testutil.SendEventsToMonitor(
 		windows.WindowEvent{Hwnd: 0x1111, Title: "Compiling..."},
@@ -197,7 +204,10 @@ func TestCompiler_WithErrors(t *testing.T) {
 
 	compiler := NewCompilerWithDeps(log, deps)
 
-	opts := CompileOptions{Hwnd: 0x9999}
+	opts := CompileOptions{
+		Hwnd:                          0x9999,
+		SkipPreCompilationDialogCheck: true,
+	}
 
 	testutil.SendEventsToMonitor(
 		windows.WindowEvent{Hwnd: 0x1111, Title: "Compiling..."},
@@ -241,10 +251,13 @@ func TestCompiler_IncompleteSymbols(t *testing.T) {
 
 	compiler := NewCompilerWithDeps(log, deps)
 
-	opts := CompileOptions{Hwnd: 0x9999}
+	opts := CompileOptions{
+		Hwnd:                          0x9999,
+		SkipPreCompilationDialogCheck: true,
+	}
 
 	testutil.SendEventsToMonitor(
-		windows.WindowEvent{Hwnd: 0xABCD, Title: "Incomplete Symbols"},
+		windows.WindowEvent{Hwnd: 0x2222, Title: "Incomplete Symbols"},
 	)
 
 	result, err := compiler.Compile(opts)
@@ -277,7 +290,10 @@ func TestCompiler_CompileDialogTimeout(t *testing.T) {
 
 	compiler := NewCompilerWithDeps(log, deps)
 
-	opts := CompileOptions{Hwnd: 0x9999}
+	opts := CompileOptions{
+		Hwnd:                          0x9999,
+		SkipPreCompilationDialogCheck: true,
+	}
 
 	// Don't send any events to trigger timeout
 
@@ -315,7 +331,10 @@ func TestCompiler_NoPid(t *testing.T) {
 
 	compiler := NewCompilerWithDeps(log, deps)
 
-	opts := CompileOptions{Hwnd: 0x9999}
+	opts := CompileOptions{
+		Hwnd:                          0x9999,
+		SkipPreCompilationDialogCheck: true,
+	}
 
 	// PID=0 means no monitoring, so don't send events
 	testutil.SendEventsToMonitor(
@@ -356,10 +375,13 @@ func TestCompiler_WithSavePrompts(t *testing.T) {
 
 	compiler := NewCompilerWithDeps(log, deps)
 
-	opts := CompileOptions{Hwnd: 0x9999}
+	opts := CompileOptions{
+		Hwnd:                          0x9999,
+		SkipPreCompilationDialogCheck: true,
+	}
 
 	testutil.SendEventsToMonitor(
-		windows.WindowEvent{Hwnd: 0x5555, Title: "Convert/Compile"},
+		windows.WindowEvent{Hwnd: 0x2222, Title: "Convert/Compile"},
 		windows.WindowEvent{Hwnd: 0x6666, Title: "Commented Out Symbols"},
 		windows.WindowEvent{Hwnd: 0x1111, Title: "Compiling..."},
 		windows.WindowEvent{Hwnd: 0x2222, Title: "Compile Complete"},
