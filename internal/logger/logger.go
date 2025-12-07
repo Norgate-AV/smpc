@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/fatih/color"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
@@ -225,13 +226,18 @@ func (h *ConsoleHandler) Enabled(_ context.Context, level slog.Level) bool {
 
 func (h *ConsoleHandler) Handle(_ context.Context, r slog.Record) error {
 	var prefix string
+	var colorFunc *color.Color
+
 	switch r.Level {
 	case slog.LevelError:
 		prefix = "ERROR: "
+		colorFunc = color.New(color.FgRed)
 	case slog.LevelWarn:
 		prefix = "WARNING: "
+		colorFunc = color.New(color.FgYellow)
 	case slog.LevelDebug:
 		prefix = "VERBOSE: "
+		colorFunc = color.New(color.FgCyan)
 	}
 
 	// Build the message with attributes
@@ -249,9 +255,16 @@ func (h *ConsoleHandler) Handle(_ context.Context, r slog.Record) error {
 		}
 	}
 
+	// Apply color if set, otherwise plain output
+	if colorFunc != nil {
+		colorFunc.Fprintf(h.writer, "%s%s\n", prefix, msg)
+		return nil
+	}
+
 	if _, err := fmt.Fprintf(h.writer, "%s%s\n", prefix, msg); err != nil {
 		// Ignore write errors to console
 	}
+
 	return nil
 }
 
