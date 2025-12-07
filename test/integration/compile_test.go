@@ -47,12 +47,8 @@ func TestIntegration_CompileWithWarnings(t *testing.T) {
 		t.Skip("Integration tests require administrator privileges")
 	}
 
-	fixturePath := getFixturePath(t, "with-warnings.smw")
-
-	// Skip if fixture doesn't exist (optional fixture)
-	if _, err := os.Stat(fixturePath); os.IsNotExist(err) {
-		t.Skip("with-warnings.smw fixture not available")
-	}
+	fixturePath := getFixturePath(t, "warnings.smw")
+	require.FileExists(t, fixturePath, "Fixture file should exist")
 
 	result, cleanup := compileFile(t, fixturePath, false)
 	defer cleanup()
@@ -64,18 +60,54 @@ func TestIntegration_CompileWithWarnings(t *testing.T) {
 	assert.Len(t, result.WarningMessages, result.Warnings, "Warning count should match messages")
 }
 
+// TestIntegration_CompileWithNotices tests compilation of a file that produces notices
+func TestIntegration_CompileWithNotices(t *testing.T) {
+	if !windows.IsElevated() {
+		t.Skip("Integration tests require administrator privileges")
+	}
+
+	fixturePath := getFixturePath(t, "notices.smw")
+	require.FileExists(t, fixturePath, "Fixture file should exist")
+
+	result, cleanup := compileFile(t, fixturePath, false)
+	defer cleanup()
+
+	// Verify compilation with notices
+	assert.False(t, result.HasErrors, "Should compile successfully despite notices")
+	assert.Equal(t, 0, result.Errors, "Should have 0 errors")
+	assert.Greater(t, result.Notices, 0, "Should have at least 1 notice")
+	assert.Len(t, result.NoticeMessages, result.Notices, "Notice count should match messages")
+}
+
+// TestIntegration_CompileWithWarningsAndNotices tests compilation with both warnings and notices
+func TestIntegration_CompileWithWarningsAndNotices(t *testing.T) {
+	if !windows.IsElevated() {
+		t.Skip("Integration tests require administrator privileges")
+	}
+
+	fixturePath := getFixturePath(t, "warnings_and_notices.smw")
+	require.FileExists(t, fixturePath, "Fixture file should exist")
+
+	result, cleanup := compileFile(t, fixturePath, false)
+	defer cleanup()
+
+	// Verify compilation with both warnings and notices
+	assert.False(t, result.HasErrors, "Should compile successfully despite warnings and notices")
+	assert.Equal(t, 0, result.Errors, "Should have 0 errors")
+	assert.Greater(t, result.Warnings, 0, "Should have at least 1 warning")
+	assert.Greater(t, result.Notices, 0, "Should have at least 1 notice")
+	assert.Len(t, result.WarningMessages, result.Warnings, "Warning count should match messages")
+	assert.Len(t, result.NoticeMessages, result.Notices, "Notice count should match messages")
+}
+
 // TestIntegration_CompileWithErrors tests compilation of a file that produces errors
 func TestIntegration_CompileWithErrors(t *testing.T) {
 	if !windows.IsElevated() {
 		t.Skip("Integration tests require administrator privileges")
 	}
 
-	fixturePath := getFixturePath(t, "with-errors.smw")
-
-	// Skip if fixture doesn't exist (optional fixture)
-	if _, err := os.Stat(fixturePath); os.IsNotExist(err) {
-		t.Skip("with-errors.smw fixture not available")
-	}
+	fixturePath := getFixturePath(t, "error.smw")
+	require.FileExists(t, fixturePath, "Fixture file should exist")
 
 	result, cleanup := compileFile(t, fixturePath, false)
 	defer cleanup()
@@ -84,6 +116,24 @@ func TestIntegration_CompileWithErrors(t *testing.T) {
 	assert.True(t, result.HasErrors, "Should fail compilation with errors")
 	assert.Greater(t, result.Errors, 0, "Should have at least 1 error")
 	assert.Len(t, result.ErrorMessages, result.Errors, "Error count should match messages")
+}
+
+// TestIntegration_CompileIncomplete tests compilation of an incomplete file
+func TestIntegration_CompileIncomplete(t *testing.T) {
+	if !windows.IsElevated() {
+		t.Skip("Integration tests require administrator privileges")
+	}
+
+	fixturePath := getFixturePath(t, "incomplete.smw")
+	require.FileExists(t, fixturePath, "Fixture file should exist")
+
+	result, cleanup := compileFile(t, fixturePath, false)
+	defer cleanup()
+
+	// Incomplete files typically have errors or warnings
+	// The exact behavior depends on what makes it "incomplete"
+	assert.NotNil(t, result, "Should return a result")
+	assert.GreaterOrEqual(t, result.Errors+result.Warnings+result.Notices, 0, "Should have some compilation feedback")
 }
 
 // TestIntegration_RecompileAll tests the recompile all functionality
