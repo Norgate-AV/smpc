@@ -241,8 +241,10 @@ func (h *ConsoleHandler) Handle(_ context.Context, r slog.Record) error {
 	}
 
 	// Build the message with attributes
+	// For Info level, don't include attributes (they're for log file only)
+	// For other levels (DEBUG/VERBOSE, WARN, ERROR), include attributes
 	msg := r.Message
-	if r.NumAttrs() > 0 {
+	if r.Level != slog.LevelInfo && r.NumAttrs() > 0 {
 		attrs := make([]string, 0, r.NumAttrs())
 
 		r.Attrs(func(a slog.Attr) bool {

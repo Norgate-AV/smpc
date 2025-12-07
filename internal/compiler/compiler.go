@@ -230,7 +230,7 @@ func (c *Compiler) handleCompilationEvents(opts CompileOptions) (uintptr, *Compi
 			switch ev.Title {
 			case "Incomplete Symbols":
 				// Fatal error - compilation cannot proceed
-				c.log.Error("ERROR: Incomplete Symbols detected", slog.String("title", ev.Title))
+				c.log.Error("Incomplete Symbols detected", slog.String("title", ev.Title))
 				c.log.Info("The program contains incomplete symbols and cannot be compiled.")
 				c.log.Info("Please fix the incomplete symbols in SIMPL Windows before attempting to compile.")
 
@@ -364,6 +364,8 @@ func (c *Compiler) handleCompilationEvents(opts CompileOptions) (uintptr, *Compi
 func (c *Compiler) parseDetailedMessages(hwnd uintptr) (warnings, notices, errors []string) {
 	childInfos := c.windowMgr.CollectChildInfos(hwnd)
 
+	var lastType string // Track the type of the last message: "ERROR", "WARNING", or "NOTICE"
+
 	// Extract messages from ListBox
 	for _, ci := range childInfos {
 		if ci.ClassName != "ListBox" || len(ci.Items) == 0 {
@@ -378,21 +380,30 @@ func (c *Compiler) parseDetailedMessages(hwnd uintptr) (warnings, notices, error
 
 			lineUpper := strings.ToUpper(line)
 			switch {
-			case strings.HasPrefix(lineUpper, "ERROR"):
+			case strings.HasPrefix(lineUpper, "ERROR\t") || strings.HasPrefix(lineUpper, "ERROR "):
 				errors = append(errors, line)
-			case strings.HasPrefix(lineUpper, "WARNING"):
+				lastType = "ERROR"
+			case strings.HasPrefix(lineUpper, "WARNING\t") || strings.HasPrefix(lineUpper, "WARNING "):
 				warnings = append(warnings, line)
-			case strings.HasPrefix(lineUpper, "NOTICE"):
+				lastType = "WARNING"
+			case strings.HasPrefix(lineUpper, "NOTICE\t") || strings.HasPrefix(lineUpper, "NOTICE "):
 				notices = append(notices, line)
+				lastType = "NOTICE"
 			default:
-				// Continuation of previous message
-				switch {
-				case len(errors) > 0:
-					errors[len(errors)-1] += " " + line
-				case len(warnings) > 0:
-					warnings[len(warnings)-1] += " " + line
-				case len(notices) > 0:
-					notices[len(notices)-1] += " " + line
+				// Continuation of previous message - append to the last type that was seen
+				switch lastType {
+				case "ERROR":
+					if len(errors) > 0 {
+						errors[len(errors)-1] += " " + line
+					}
+				case "WARNING":
+					if len(warnings) > 0 {
+						warnings[len(warnings)-1] += " " + line
+					}
+				case "NOTICE":
+					if len(notices) > 0 {
+						notices[len(notices)-1] += " " + line
+					}
 				}
 			}
 		}
@@ -409,6 +420,7 @@ func (c *Compiler) logCompilationMessages(errorMsgs, warningMsgs, noticeMsgs []s
 		for i, msg := range errorMsgs {
 			c.log.Info(fmt.Sprintf("  %d. %s", i+1, msg),
 				slog.Int("number", i+1),
+				slog.String("type", "error"),
 				slog.String("message", msg),
 			)
 		}
@@ -418,7 +430,11 @@ func (c *Compiler) logCompilationMessages(errorMsgs, warningMsgs, noticeMsgs []s
 		c.log.Info("")
 		c.log.Info("Warning messages:")
 		for i, msg := range warningMsgs {
-			c.log.Info(fmt.Sprintf("  %d. %s", i+1, msg))
+			c.log.Info(fmt.Sprintf("  %d. %s", i+1, msg),
+				slog.Int("number", i+1),
+				slog.String("type", "warning"),
+				slog.String("message", msg),
+			)
 		}
 	}
 
@@ -426,7 +442,11 @@ func (c *Compiler) logCompilationMessages(errorMsgs, warningMsgs, noticeMsgs []s
 		c.log.Info("")
 		c.log.Info("Notice messages:")
 		for i, msg := range noticeMsgs {
-			c.log.Info(fmt.Sprintf("  %d. %s", i+1, msg))
+			c.log.Info(fmt.Sprintf("  %d. %s", i+1, msg),
+				slog.Int("number", i+1),
+				slog.String("type", "notice"),
+				slog.String("message", msg),
+			)
 		}
 	}
 
