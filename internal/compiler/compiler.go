@@ -35,16 +35,19 @@ type CompileOptions struct {
 
 // CompileDependencies holds all external dependencies for testing
 type CompileDependencies struct {
-	DialogHandler *DialogHandler
 	ProcessMgr    interfaces.ProcessManager
 	WindowMgr     interfaces.WindowManager
 	Keyboard      interfaces.KeyboardInjector
+	ControlReader interfaces.ControlReader
 }
 
 // Compiler orchestrates the compilation process with injected dependencies
 type Compiler struct {
-	log  logger.LoggerInterface
-	deps *CompileDependencies
+	log           logger.LoggerInterface
+	processMgr    interfaces.ProcessManager
+	windowMgr     interfaces.WindowManager
+	keyboard      interfaces.KeyboardInjector
+	controlReader interfaces.ControlReader
 }
 
 // NewCompiler creates a new Compiler with the provided logger and default dependencies
@@ -53,21 +56,22 @@ func NewCompiler(log logger.LoggerInterface) *Compiler {
 	simplAPI := simpl.SimplProcessAPI{}
 
 	return &Compiler{
-		log: log,
-		deps: &CompileDependencies{
-			DialogHandler: NewDialogHandlerWithAPI(log, windowsAPI),
-			ProcessMgr:    simplAPI,
-			WindowMgr:     windowsAPI,
-			Keyboard:      windowsAPI,
-		},
+		log:           log,
+		processMgr:    simplAPI,
+		windowMgr:     windowsAPI,
+		keyboard:      windowsAPI,
+		controlReader: windowsAPI,
 	}
 }
 
 // NewCompilerWithDeps creates a new Compiler with custom dependencies for testing
 func NewCompilerWithDeps(log logger.LoggerInterface, deps *CompileDependencies) *Compiler {
 	return &Compiler{
-		log:  log,
-		deps: deps,
+		log:           log,
+		processMgr:    deps.ProcessMgr,
+		windowMgr:     deps.WindowMgr,
+		keyboard:      deps.Keyboard,
+		controlReader: deps.ControlReader,
 	}
 }
 
@@ -83,7 +87,7 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 
 	// Detect SIMPL Windows process PID for dialog monitoring
 	c.log.Debug("Getting SIMPL Windows process PID")
-	pid := c.deps.ProcessMgr.GetPid()
+	pid := c.processMgr.GetPid()
 	if pid == 0 {
 		c.log.Warn("Could not determine PID")
 		c.log.Info("Warning: Could not determine SIMPL Windows process PID; dialog detection may be limited")
@@ -94,16 +98,8 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 		}
 	}
 
-	// Handle "Operation Complete" dialog that may appear after loading the file
-	// Only attempt dialog handling if we have a valid PID
-	if pid != 0 {
-		if err := c.deps.DialogHandler.HandleOperationComplete(); err != nil {
-			return nil, err
-		}
-	}
-
 	// Confirm elevation before sending keystrokes
-	if c.deps.WindowMgr.IsElevated() {
+	if c.windowMgr.IsElevated() {
 		c.log.Debug("Process is elevated, proceeding with keystroke injection")
 	} else {
 		c.log.Warn("Process is NOT elevated, keystroke injection may fail")
@@ -111,12 +107,12 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 
 	// Bring window to foreground and send compile keystroke
 	c.log.Debug("Bringing window to foreground")
-	focusSuccess := c.deps.WindowMgr.SetForeground(opts.Hwnd)
+	focusSuccess := c.windowMgr.SetForeground(opts.Hwnd)
 	if !focusSuccess {
 		c.log.Warn("SetForeground failed on first attempt, retrying...")
 		time.Sleep(500 * time.Millisecond)
 
-		focusSuccess = c.deps.WindowMgr.SetForeground(opts.Hwnd)
+		focusSuccess = c.windowMgr.SetForeground(opts.Hwnd)
 		if !focusSuccess {
 			c.log.Error("Failed to bring window to foreground after retry")
 			return nil, fmt.Errorf("failed to bring SIMPL Windows to foreground - cannot send keystrokes")
@@ -127,7 +123,7 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 
 	// Verify the window is in the foreground before sending keystrokes
 	c.log.Debug("Verifying foreground window")
-	verified := c.deps.WindowMgr.VerifyForegroundWindow(opts.Hwnd, pid)
+	verified := c.windowMgr.VerifyForegroundWindow(opts.Hwnd, pid)
 	if !verified {
 		c.log.Error("Could not verify correct window is in foreground")
 		return nil, fmt.Errorf("wrong window in foreground - cannot safely send keystrokes")
@@ -136,19 +132,19 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 	var success bool
 	if opts.RecompileAll {
 		// Try SendInput first (modern API, atomic operation)
-		success = c.deps.Keyboard.SendAltF12WithSendInput()
+		success = c.keyboard.SendAltF12WithSendInput()
 		if !success {
 			c.log.Warn("SendAltF12WithSendInput failed, falling back to keybd_event")
-			c.deps.Keyboard.SendAltF12()
+			c.keyboard.SendAltF12()
 		} else {
 			c.log.Debug("SendAltF12WithSendInput succeeded")
 		}
 	} else {
 		// Try SendInput first (modern API, atomic operation)
-		success = c.deps.Keyboard.SendF12WithSendInput()
+		success = c.keyboard.SendF12WithSendInput()
 		if !success {
 			c.log.Warn("SendF12WithSendInput failed, falling back to keybd_event")
-			c.deps.Keyboard.SendF12()
+			c.keyboard.SendF12()
 		} else {
 			c.log.Debug("SendF12WithSendInput succeeded")
 		}
@@ -172,25 +168,26 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 		result = eventResult
 	}
 
-	// Close dialogs
+	// Close dialogs and handle post-compilation events
 	c.log.Debug("Closing dialogs and SIMPL Windows...")
 
 	// First, close the "Compile Complete" dialog if it's still open
 	if compileCompleteHwnd != 0 {
-		c.deps.WindowMgr.CloseWindow(compileCompleteHwnd, "Compile Complete dialog")
+		c.windowMgr.CloseWindow(compileCompleteHwnd, "Compile Complete dialog")
 		time.Sleep(timeouts.StabilityCheckInterval)
 	}
 
-	// Handle confirmation dialog when closing
-	if pid != 0 {
-		if err := c.deps.DialogHandler.HandleConfirmation(); err != nil {
-			return nil, err
-		}
-	}
-
-	// Now close the main SIMPL Windows application
+	// Close main window and handle any confirmation dialogs via events
 	if opts.Hwnd != 0 {
-		c.deps.WindowMgr.CloseWindow(opts.Hwnd, "SIMPL Windows")
+		c.windowMgr.CloseWindow(opts.Hwnd, "SIMPL Windows")
+
+		// Handle confirmation dialog that may appear when closing
+		if pid != 0 {
+			if err := c.handlePostCompilationEvents(); err != nil {
+				return nil, err
+			}
+		}
+
 		time.Sleep(timeouts.CleanupDelay)
 	}
 
@@ -237,7 +234,7 @@ func (c *Compiler) handleCompilationEvents(opts CompileOptions) (uintptr, *Compi
 				c.log.Info("Please fix the incomplete symbols in SIMPL Windows before attempting to compile.")
 
 				// Extract error details
-				childInfos := c.deps.WindowMgr.CollectChildInfos(ev.Hwnd)
+				childInfos := c.windowMgr.CollectChildInfos(ev.Hwnd)
 				for _, ci := range childInfos {
 					if ci.ClassName == "Edit" && len(ci.Text) > 50 {
 						c.log.Info("Details", slog.String("text", ci.Text))
@@ -250,17 +247,17 @@ func (c *Compiler) handleCompilationEvents(opts CompileOptions) (uintptr, *Compi
 			case "Convert/Compile":
 				// Save prompt - auto-confirm
 				c.log.Debug("Handling 'Convert/Compile' dialog")
-				_ = c.deps.WindowMgr.SetForeground(ev.Hwnd)
+				_ = c.windowMgr.SetForeground(ev.Hwnd)
 				time.Sleep(timeouts.DialogResponseDelay)
-				c.deps.Keyboard.SendEnter()
+				c.keyboard.SendEnter()
 				c.log.Info("Auto-confirmed save prompt")
 
 			case "Commented out Symbols and/or Devices":
 				// Confirmation dialog - auto-confirm
 				c.log.Debug("Handling 'Commented out Symbols and/or Devices' dialog")
-				_ = c.deps.WindowMgr.SetForeground(ev.Hwnd)
+				_ = c.windowMgr.SetForeground(ev.Hwnd)
 				time.Sleep(timeouts.DialogResponseDelay)
-				c.deps.Keyboard.SendEnter()
+				c.keyboard.SendEnter()
 				c.log.Info("Auto-confirmed commented symbols dialog")
 
 			case "Compiling...":
@@ -285,7 +282,7 @@ func (c *Compiler) handleCompilationEvents(opts CompileOptions) (uintptr, *Compi
 					compileCompleteHwnd = ev.Hwnd
 
 					// Parse statistics from dialog
-					childInfos := c.deps.WindowMgr.CollectChildInfos(ev.Hwnd)
+					childInfos := c.windowMgr.CollectChildInfos(ev.Hwnd)
 					for _, ci := range childInfos {
 						text := strings.ReplaceAll(ci.Text, "\r\n", "\n")
 						lines := strings.Split(text, "\n")
@@ -328,7 +325,7 @@ func (c *Compiler) handleCompilationEvents(opts CompileOptions) (uintptr, *Compi
 			case "Operation Complete":
 				// Sometimes appears - close it
 				c.log.Debug("Detected 'Operation Complete' dialog - closing")
-				c.deps.WindowMgr.CloseWindow(ev.Hwnd, ev.Title)
+				c.windowMgr.CloseWindow(ev.Hwnd, ev.Title)
 				time.Sleep(timeouts.WindowMessageDelay)
 			}
 
@@ -364,7 +361,7 @@ func (c *Compiler) handleCompilationEvents(opts CompileOptions) (uintptr, *Compi
 
 // parseDetailedMessages extracts error/warning/notice messages from Program Compilation dialog
 func (c *Compiler) parseDetailedMessages(hwnd uintptr) (warnings, notices, errors []string) {
-	childInfos := c.deps.WindowMgr.CollectChildInfos(hwnd)
+	childInfos := c.windowMgr.CollectChildInfos(hwnd)
 
 	// Extract messages from ListBox
 	for _, ci := range childInfos {
@@ -436,4 +433,39 @@ func (c *Compiler) logCompilationMessages(errorMsgs, warningMsgs, noticeMsgs []s
 	if len(errorMsgs) > 0 || len(warningMsgs) > 0 || len(noticeMsgs) > 0 {
 		c.log.Info("")
 	}
+}
+
+// handlePostCompilationEvents waits for and handles any post-compilation dialogs (like Confirmation)
+func (c *Compiler) handlePostCompilationEvents() error {
+	// Short timeout - if no confirmation dialog appears, that's fine
+	timeout := time.NewTimer(timeouts.DialogConfirmationTimeout)
+	defer timeout.Stop()
+
+	select {
+	case ev := <-windows.MonitorCh:
+		c.log.Debug("Received post-compilation event",
+			slog.String("title", ev.Title),
+			slog.Uint64("hwnd", uint64(ev.Hwnd)))
+
+		// Only handle Confirmation dialog here
+		if ev.Title == "Confirmation" {
+			c.log.Debug("Detected 'Confirmation' dialog - clicking No")
+			c.log.Info("Handling confirmation dialog")
+
+			if c.controlReader.FindAndClickButton(ev.Hwnd, "&No") {
+				c.log.Debug("Successfully clicked 'No' button")
+				time.Sleep(timeouts.WindowMessageDelay)
+			} else {
+				c.log.Warn("Could not find 'No' button, trying to close dialog")
+				c.windowMgr.CloseWindow(ev.Hwnd, "Confirmation dialog")
+				time.Sleep(timeouts.WindowMessageDelay)
+			}
+		}
+
+	case <-timeout.C:
+		// Timeout is fine - dialog may not appear
+		c.log.Debug("No confirmation dialog detected (timeout)")
+	}
+
+	return nil
 }

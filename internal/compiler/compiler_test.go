@@ -26,12 +26,11 @@ func TestCompiler_SuccessfulCompilation(t *testing.T) {
 	mockProc := testutil.NewMockProcessManager().WithPid(1234)
 
 	log := logger.NewNoOpLogger()
-	dialogHandler := NewDialogHandler(log, mockWin, mockKbd, mockCtrl)
 	deps := &CompileDependencies{
-		DialogHandler: dialogHandler,
 		ProcessMgr:    mockProc,
 		WindowMgr:     mockWin,
 		Keyboard:      mockKbd,
+		ControlReader: mockCtrl,
 	}
 
 	compiler := NewCompilerWithDeps(log, deps)
@@ -86,12 +85,11 @@ func TestCompiler_RecompileAll(t *testing.T) {
 	mockProc := testutil.NewMockProcessManager().WithPid(1234)
 
 	log := logger.NewNoOpLogger()
-	dialogHandler := NewDialogHandler(log, mockWin, mockKbd, mockCtrl)
 	deps := &CompileDependencies{
-		DialogHandler: dialogHandler,
 		ProcessMgr:    mockProc,
 		WindowMgr:     mockWin,
 		Keyboard:      mockKbd,
+		ControlReader: mockCtrl,
 	}
 
 	compiler := NewCompilerWithDeps(log, deps)
@@ -139,12 +137,11 @@ func TestCompiler_WithWarnings(t *testing.T) {
 	mockProc := testutil.NewMockProcessManager().WithPid(1234)
 
 	log := logger.NewNoOpLogger()
-	dialogHandler := NewDialogHandler(log, mockWin, mockKbd, mockCtrl)
 	deps := &CompileDependencies{
-		DialogHandler: dialogHandler,
 		ProcessMgr:    mockProc,
 		WindowMgr:     mockWin,
 		Keyboard:      mockKbd,
+		ControlReader: mockCtrl,
 	}
 
 	compiler := NewCompilerWithDeps(log, deps)
@@ -191,12 +188,11 @@ func TestCompiler_WithErrors(t *testing.T) {
 	mockProc := testutil.NewMockProcessManager().WithPid(1234)
 
 	log := logger.NewNoOpLogger()
-	dialogHandler := NewDialogHandler(log, mockWin, mockKbd, mockCtrl)
 	deps := &CompileDependencies{
-		DialogHandler: dialogHandler,
 		ProcessMgr:    mockProc,
 		WindowMgr:     mockWin,
 		Keyboard:      mockKbd,
+		ControlReader: mockCtrl,
 	}
 
 	compiler := NewCompilerWithDeps(log, deps)
@@ -236,12 +232,11 @@ func TestCompiler_IncompleteSymbols(t *testing.T) {
 	mockProc := testutil.NewMockProcessManager().WithPid(1234)
 
 	log := logger.NewNoOpLogger()
-	dialogHandler := NewDialogHandler(log, mockWin, mockKbd, mockCtrl)
 	deps := &CompileDependencies{
-		DialogHandler: dialogHandler,
 		ProcessMgr:    mockProc,
 		WindowMgr:     mockWin,
 		Keyboard:      mockKbd,
+		ControlReader: mockCtrl,
 	}
 
 	compiler := NewCompilerWithDeps(log, deps)
@@ -270,12 +265,11 @@ func TestCompiler_CompileDialogTimeout(t *testing.T) {
 	mockProc := testutil.NewMockProcessManager().WithPid(1234)
 
 	log := logger.NewNoOpLogger()
-	dialogHandler := NewDialogHandler(log, mockWin, mockKbd, mockCtrl)
 	deps := &CompileDependencies{
-		DialogHandler: dialogHandler,
 		ProcessMgr:    mockProc,
 		WindowMgr:     mockWin,
 		Keyboard:      mockKbd,
+		ControlReader: mockCtrl,
 	}
 
 	compiler := NewCompilerWithDeps(log, deps)
@@ -306,12 +300,11 @@ func TestCompiler_NoPid(t *testing.T) {
 	mockProc := testutil.NewMockProcessManager().WithPid(0) // PID not available
 
 	log := logger.NewNoOpLogger()
-	dialogHandler := NewDialogHandler(log, mockWin, mockKbd, mockCtrl)
 	deps := &CompileDependencies{
-		DialogHandler: dialogHandler,
 		ProcessMgr:    mockProc,
 		WindowMgr:     mockWin,
 		Keyboard:      mockKbd,
+		ControlReader: mockCtrl,
 	}
 
 	compiler := NewCompilerWithDeps(log, deps)
@@ -348,12 +341,11 @@ func TestCompiler_WithSavePrompts(t *testing.T) {
 	mockProc := testutil.NewMockProcessManager().WithPid(1234)
 
 	log := logger.NewNoOpLogger()
-	dialogHandler := NewDialogHandler(log, mockWin, mockKbd, mockCtrl)
 	deps := &CompileDependencies{
-		DialogHandler: dialogHandler,
 		ProcessMgr:    mockProc,
 		WindowMgr:     mockWin,
 		Keyboard:      mockKbd,
+		ControlReader: mockCtrl,
 	}
 
 	compiler := NewCompilerWithDeps(log, deps)
