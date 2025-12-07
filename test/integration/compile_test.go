@@ -39,6 +39,11 @@ func TestIntegration_SimpleCompile(t *testing.T) {
 	assert.GreaterOrEqual(t, result.Warnings, 0, "Warnings should be non-negative")
 	assert.GreaterOrEqual(t, result.Notices, 0, "Notices should be non-negative")
 	assert.Greater(t, result.CompileTime, 0.0, "Compile time should be positive")
+
+	// Ensure we didn't hit a timeout
+	for _, msg := range result.ErrorMessages {
+		assert.NotContains(t, msg, "timeout", "Should not have timed out")
+	}
 }
 
 // TestIntegration_CompileWithWarnings tests compilation of a file that produces warnings
@@ -58,6 +63,11 @@ func TestIntegration_CompileWithWarnings(t *testing.T) {
 	assert.Equal(t, 0, result.Errors, "Should have 0 errors")
 	assert.Greater(t, result.Warnings, 0, "Should have at least 1 warning")
 	assert.Len(t, result.WarningMessages, result.Warnings, "Warning count should match messages")
+
+	// Ensure we didn't hit a timeout
+	for _, msg := range result.ErrorMessages {
+		assert.NotContains(t, msg, "timeout", "Should not have timed out")
+	}
 }
 
 // TestIntegration_CompileWithNotices tests compilation of a file that produces notices
@@ -77,6 +87,11 @@ func TestIntegration_CompileWithNotices(t *testing.T) {
 	assert.Equal(t, 0, result.Errors, "Should have 0 errors")
 	assert.Greater(t, result.Notices, 0, "Should have at least 1 notice")
 	assert.Len(t, result.NoticeMessages, result.Notices, "Notice count should match messages")
+
+	// Ensure we didn't hit a timeout
+	for _, msg := range result.ErrorMessages {
+		assert.NotContains(t, msg, "timeout", "Should not have timed out")
+	}
 }
 
 // TestIntegration_CompileWithWarningsAndNotices tests compilation with both warnings and notices
@@ -98,6 +113,11 @@ func TestIntegration_CompileWithWarningsAndNotices(t *testing.T) {
 	assert.Greater(t, result.Notices, 0, "Should have at least 1 notice")
 	assert.Len(t, result.WarningMessages, result.Warnings, "Warning count should match messages")
 	assert.Len(t, result.NoticeMessages, result.Notices, "Notice count should match messages")
+
+	// Ensure we didn't hit a timeout
+	for _, msg := range result.ErrorMessages {
+		assert.NotContains(t, msg, "timeout", "Should not have timed out")
+	}
 }
 
 // TestIntegration_CompileWithErrors tests compilation of a file that produces errors
@@ -109,13 +129,19 @@ func TestIntegration_CompileWithErrors(t *testing.T) {
 	fixturePath := getFixturePath(t, "error.smw")
 	require.FileExists(t, fixturePath, "Fixture file should exist")
 
-	result, cleanup := compileFile(t, fixturePath, true)
+	result, cleanup := compileFile(t, fixturePath, false) // Use normal compile, not recompile all
 	defer cleanup()
 
 	// Verify compilation failed with errors
 	assert.True(t, result.HasErrors, "Should fail compilation with errors")
-	assert.Greater(t, result.Errors, 0, "Should have at least 1 error")
+	assert.Greater(t, result.Errors, 1, "Should have at least 2 errors (not just a timeout)")
 	assert.Len(t, result.ErrorMessages, result.Errors, "Error count should match messages")
+
+	// Ensure we didn't hit a timeout
+	for _, msg := range result.ErrorMessages {
+		assert.NotContains(t, msg, "timeout", "Should not have timed out - actual compilation errors expected")
+		assert.NotContains(t, msg, "Compile Complete", "Should not have timed out - actual compilation errors expected")
+	}
 }
 
 // TestIntegration_CompileIncomplete tests compilation of an incomplete file
@@ -130,10 +156,17 @@ func TestIntegration_CompileIncomplete(t *testing.T) {
 	result, cleanup := compileFile(t, fixturePath, false)
 	defer cleanup()
 
-	// Incomplete files typically have errors or warnings
-	// The exact behavior depends on what makes it "incomplete"
+	// Incomplete files should produce a specific error about incomplete symbols
 	assert.NotNil(t, result, "Should return a result")
-	assert.GreaterOrEqual(t, result.Errors+result.Warnings+result.Notices, 0, "Should have some compilation feedback")
+	assert.True(t, result.HasErrors, "Should have errors for incomplete symbols")
+	assert.Equal(t, 1, result.Errors, "Should have exactly 1 error for incomplete symbols")
+
+	// Verify it's the incomplete symbols error, not a timeout
+	assert.Len(t, result.ErrorMessages, 1, "Should have one error message")
+	if len(result.ErrorMessages) > 0 {
+		assert.Contains(t, result.ErrorMessages[0], "Incomplete Symbols", "Error should be about incomplete symbols")
+		assert.NotContains(t, result.ErrorMessages[0], "timeout", "Should not have timed out")
+	}
 }
 
 // TestIntegration_RecompileAll tests the recompile all functionality
@@ -152,6 +185,11 @@ func TestIntegration_RecompileAll(t *testing.T) {
 	// Verify successful compilation
 	assert.False(t, result.HasErrors, "Recompile all should succeed")
 	assert.Equal(t, 0, result.Errors, "Should have 0 errors")
+
+	// Ensure we didn't hit a timeout
+	for _, msg := range result.ErrorMessages {
+		assert.NotContains(t, msg, "timeout", "Should not have timed out")
+	}
 }
 
 // TestIntegration_FileValidation tests the file validation that should occur before compilation
