@@ -257,7 +257,10 @@ func (h *ConsoleHandler) Handle(_ context.Context, r slog.Record) error {
 
 	// Apply color if set, otherwise plain output
 	if colorFunc != nil {
-		colorFunc.Fprintf(h.writer, "%s%s\n", prefix, msg)
+		if _, err := colorFunc.Fprintf(h.writer, "%s%s\n", prefix, msg); err != nil {
+			// Ignore write errors to console
+		}
+
 		return nil
 	}
 
