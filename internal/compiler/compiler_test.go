@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 
@@ -293,6 +294,7 @@ func TestCompiler_CompileDialogTimeout(t *testing.T) {
 	opts := CompileOptions{
 		Hwnd:                          0x9999,
 		SkipPreCompilationDialogCheck: true,
+		CompilationTimeout:            1 * time.Second, // Fast timeout for testing
 	}
 
 	// Don't send any events to trigger timeout

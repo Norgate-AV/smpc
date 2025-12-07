@@ -48,8 +48,9 @@ type CompileOptions struct {
 	FilePath                      string
 	RecompileAll                  bool
 	Hwnd                          uintptr
-	SimplPidPtr                   *uint32 // Pointer to store PID for signal handlers
-	SkipPreCompilationDialogCheck bool    // For testing - skip the pre-compilation dialog check
+	SimplPidPtr                   *uint32       // Pointer to store PID for signal handlers
+	SkipPreCompilationDialogCheck bool          // For testing - skip the pre-compilation dialog check
+	CompilationTimeout            time.Duration // Override default timeout (0 = use default 5 minutes)
 }
 
 // CompileDependencies holds all external dependencies for testing
@@ -238,7 +239,12 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 // handleCompilationEvents uses an event-driven approach to respond to dialogs as they appear
 func (c *Compiler) handleCompilationEvents(opts CompileOptions) (uintptr, *CompileResult, error) {
 	// Maximum time to wait for compilation to complete
-	timeout := time.NewTimer(timeouts.CompilationCompleteTimeout)
+	// Use custom timeout if specified, otherwise use default 5 minutes
+	compilationTimeout := timeouts.CompilationCompleteTimeout
+	if opts.CompilationTimeout > 0 {
+		compilationTimeout = opts.CompilationTimeout
+	}
+	timeout := time.NewTimer(compilationTimeout)
 	defer timeout.Stop()
 
 	result := &CompileResult{}
