@@ -116,7 +116,11 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 		focusSuccess = c.windowMgr.SetForeground(opts.Hwnd)
 		if !focusSuccess {
 			c.log.Error("Failed to bring window to foreground after retry")
-			return nil, fmt.Errorf("failed to bring SIMPL Windows to foreground - cannot send keystrokes")
+			return &CompileResult{
+				Errors:        1,
+				HasErrors:     true,
+				ErrorMessages: []string{"Failed to bring SIMPL Windows to foreground - cannot send keystrokes"},
+			}, fmt.Errorf("failed to bring SIMPL Windows to foreground - cannot send keystrokes")
 		}
 	}
 
@@ -127,7 +131,11 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 	verified := c.windowMgr.VerifyForegroundWindow(opts.Hwnd, pid)
 	if !verified {
 		c.log.Error("Could not verify correct window is in foreground")
-		return nil, fmt.Errorf("wrong window in foreground - cannot safely send keystrokes")
+		return &CompileResult{
+			Errors:        1,
+			HasErrors:     true,
+			ErrorMessages: []string{"Wrong window in foreground - cannot safely send keystrokes"},
+		}, fmt.Errorf("wrong window in foreground - cannot safely send keystrokes")
 	}
 
 	var success bool
@@ -162,7 +170,8 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 		var eventResult *CompileResult
 		compileCompleteHwnd, eventResult, err = c.handleCompilationEvents(opts)
 		if err != nil {
-			return nil, err
+			// Return the result even on error so caller can see what happened
+			return eventResult, err
 		}
 
 		// Copy event result into our result
@@ -185,7 +194,8 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 		// Handle confirmation dialog that may appear when closing
 		if pid != 0 {
 			if err := c.handlePostCompilationEvents(); err != nil {
-				return nil, err
+				// Return the result we have so far, even if cleanup failed
+				return result, err
 			}
 		}
 
@@ -243,7 +253,18 @@ func (c *Compiler) handleCompilationEvents(opts CompileOptions) (uintptr, *Compi
 					}
 				}
 
-				return 0, nil, fmt.Errorf("program contains incomplete symbols and cannot be compiled")
+				// Close the dialog before returning
+				c.windowMgr.CloseWindow(ev.Hwnd, "Incomplete Symbols dialog")
+
+				// Return the SIMPL Windows hwnd so test cleanup can close it properly
+				// Return a result indicating compilation failed
+				return opts.Hwnd, &CompileResult{
+					Errors:    1,
+					HasErrors: true,
+					ErrorMessages: []string{
+						"Incomplete Symbols: The program contains incomplete symbols and cannot be compiled",
+					},
+				}, fmt.Errorf("program contains incomplete symbols and cannot be compiled")
 
 			case "Convert/Compile":
 				// Save prompt - auto-confirm
@@ -279,7 +300,6 @@ func (c *Compiler) handleCompilationEvents(opts CompileOptions) (uintptr, *Compi
 				// Compilation finished - parse results
 				if !compileCompleteDetected {
 					c.log.Debug("Detected 'Compile Complete' dialog - parsing results")
-					c.log.Info("Compilation complete")
 					compileCompleteHwnd = ev.Hwnd
 
 					// Parse statistics from dialog
@@ -319,7 +339,7 @@ func (c *Compiler) handleCompilationEvents(opts CompileOptions) (uintptr, *Compi
 				// Detailed error/warning/notice messages
 				if programCompHwnd == 0 {
 					c.log.Debug("Detected 'Program Compilation' dialog")
-					c.log.Info("Gathering detailed error/warning/notice messages...")
+					c.log.Info("Gathering details...")
 					programCompHwnd = ev.Hwnd
 				}
 
@@ -355,7 +375,13 @@ func (c *Compiler) handleCompilationEvents(opts CompileOptions) (uintptr, *Compi
 
 		case <-timeout.C:
 			c.log.Error("Compilation timeout: did not complete within 5 minutes")
-			return 0, nil, fmt.Errorf("compilation timeout: did not detect 'Compile Complete' dialog within 5 minutes")
+			return opts.Hwnd, &CompileResult{
+				Errors:    1,
+				HasErrors: true,
+				ErrorMessages: []string{
+					"Compilation timeout: did not detect 'Compile Complete' dialog within 5 minutes",
+				},
+			}, fmt.Errorf("compilation timeout: did not detect 'Compile Complete' dialog within 5 minutes")
 		}
 	}
 }

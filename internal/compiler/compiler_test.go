@@ -126,9 +126,9 @@ func TestCompiler_WithWarnings(t *testing.T) {
 		).
 		WithChildInfosForHwnd(0x3333, // Program Compilation dialog
 			windows.ChildInfo{ClassName: "ListBox", Items: []string{
-				"WARNING: Line 10: Unused variable 'x'",
-				"WARNING: Line 20: Deprecated function call",
-				"NOTICE: Line 30: Optimization applied",
+				"WARNING    (LGCMCVT102) ** Signal foo has no driving source",
+				"WARNING    (LGCMCVT102) ** Signal bar has no driving source",
+				"NOTICE     (LGCMCVT103) ** Signal baz has no destination",
 			}},
 		)
 
@@ -177,9 +177,9 @@ func TestCompiler_WithErrors(t *testing.T) {
 		).
 		WithChildInfosForHwnd(0x3333, // Program Compilation dialog
 			windows.ChildInfo{ClassName: "ListBox", Items: []string{
-				"ERROR: Line 5: Undefined symbol 'foo'",
-				"ERROR: Line 15: Type mismatch",
-				"ERROR: Line 25: Missing semicolon",
+				"ERROR      (LGSPLS1700) Line 5: Undefined symbol 'foo'",
+				"ERROR      (LGCMCVT247) Line 15: Type mismatch",
+				"ERROR      (LGCMCVT101) Line 25: Missing semicolon",
 			}},
 		)
 
@@ -250,8 +250,11 @@ func TestCompiler_IncompleteSymbols(t *testing.T) {
 	result, err := compiler.Compile(opts)
 
 	assert.Error(t, err)
-	assert.Nil(t, result)
+	assert.NotNil(t, result)
 	assert.Contains(t, err.Error(), "incomplete symbols")
+	assert.True(t, result.HasErrors)
+	assert.Equal(t, 1, result.Errors)
+	assert.Len(t, result.ErrorMessages, 1)
 }
 
 func TestCompiler_CompileDialogTimeout(t *testing.T) {
@@ -281,8 +284,11 @@ func TestCompiler_CompileDialogTimeout(t *testing.T) {
 	result, err := compiler.Compile(opts)
 
 	assert.Error(t, err)
-	assert.Nil(t, result)
+	assert.NotNil(t, result)
 	assert.Contains(t, err.Error(), "Compile Complete")
+	assert.True(t, result.HasErrors)
+	assert.Equal(t, 1, result.Errors)
+	assert.Len(t, result.ErrorMessages, 1)
 }
 
 func TestCompiler_NoPid(t *testing.T) {
