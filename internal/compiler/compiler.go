@@ -145,6 +145,13 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 		}, fmt.Errorf("wrong window in foreground - cannot safely send keystrokes")
 	}
 
+	// Handle any pre-compilation dialogs (like "Operation Complete") that may be blocking
+	if pid != 0 {
+		if err := c.handlePreCompilationDialogs(); err != nil {
+			c.log.Warn("Error handling pre-compilation dialogs", slog.Any("error", err))
+		}
+	}
+
 	var success bool
 	if opts.RecompileAll {
 		// Try SendInput first (modern API, atomic operation)
@@ -486,6 +493,40 @@ func (c *Compiler) logCompilationMessages(errorMsgs, warningMsgs, noticeMsgs []s
 	// Add trailing blank line if any messages were displayed
 	if len(errorMsgs) > 0 || len(warningMsgs) > 0 || len(noticeMsgs) > 0 {
 		c.log.Info("")
+	}
+}
+
+// handlePreCompilationDialogs checks for and dismisses dialogs that may block compilation
+// This includes "Operation Complete" dialog that can appear during SIMPL Windows startup
+func (c *Compiler) handlePreCompilationDialogs() error {
+	// Short timeout - check if there are any dialogs already present
+	timeout := time.NewTimer(timeouts.WindowMessageDelay)
+	defer timeout.Stop()
+
+	for {
+		select {
+		case ev := <-windows.MonitorCh:
+			c.log.Debug("Received pre-compilation event",
+				slog.String("title", ev.Title),
+				slog.Uint64("hwnd", uint64(ev.Hwnd)))
+
+			// Handle dialogs that may block compilation
+			switch ev.Title {
+			case "Operation Complete":
+				c.log.Debug("Detected 'Operation Complete' dialog - closing")
+				c.log.Info("Handling pre-compilation 'Operation Complete' dialog")
+				c.windowMgr.CloseWindow(ev.Hwnd, "Operation Complete")
+				time.Sleep(timeouts.WindowMessageDelay)
+
+			default:
+				// Log but don't handle other dialogs here
+				c.log.Trace("Ignoring pre-compilation dialog", slog.String("title", ev.Title))
+			}
+
+		case <-timeout.C:
+			// Timeout is fine - no blocking dialogs present
+			return nil
+		}
 	}
 }
 
