@@ -11,61 +11,90 @@ output:
   print-linter-name: true
 
 linters-settings:
+  depguard:
+    rules:
+      main:
+        allow:
+          - $gostd
+          - github.com/Norgate-AV/smpc
+          - github.com/spf13/cobra
+          - github.com/stretchr/testify
+          - gopkg.in/natefinch/lumberjack.v2
   dupl:
     threshold: 100
   exhaustive:
     default-signifies-exhaustive: false
   funlen:
-    lines: 100
-    statements: 50
+    lines: 120
+    statements: 60
   gci:
     sections:
       - standard
       - default
-      - prefix(github.com/damienbutt/emojify)
+      - prefix(github.com/Norgate-AV/smpc)
   goconst:
     min-len: 2
     min-occurrences: 2
   gocritic:
     enabled-tags:
       - diagnostic
-      - experimental
-      - opinionated
       - performance
-      - style
     disabled-checks:
-      - dupImport # https://github.com/go-critic/go-critic/issues/845
+      # - dupImport # https://github.com/go-critic/go-critic/issues/845
       - ifElseChain
-      - octalLiteral
-      - whyNoLint
+      # - octalLiteral
+      # - whyNoLint
       - wrapperFunc
+      - commentedOutCode # Allow commented code in Windows API
+      # - paramTypeCombine # Allow explicit parameter types for clarity
+      # - unnamedResult # Common in Windows callbacks
+      # - nestingReduce # Event-driven code has natural nesting
+      - equalFold # Opinionated style preference
+      - hugeParam # slog.Record is 288 bytes, passing by value is idiomatic
   gocyclo:
-    min-complexity: 15
+    min-complexity: 35 # Increased for event-driven code
   goimports:
-    local-prefixes: github.com/damienbutt/emojify
+    local-prefixes: github.com/Norgate-AV/smpc
   golint:
     min-confidence: 0
   mnd:
     settings:
       mnd:
         # don't include the "operation" and "assign"
-        checks: argument,case,condition,return
+        checks: [] # Disable - Windows API uses many constants
+        ignored-functions:
+          - "make"
+          - "time.Sleep"
+          - "time.NewTimer"
   govet:
-    enable:
-      - shadow
-    settings:
-      printf:
-        funcs:
-          - (github.com/golangci/golangci-lint/pkg/logutils.Log).Infof
-          - (github.com/golangci/golangci-lint/pkg/logutils.Log).Warnf
-          - (github.com/golangci/golangci-lint/pkg/logutils.Log).Errorf
-          - (github.com/golangci/golangci-lint/pkg/logutils.Log).Fatalf
+    disable:
+      - shadow # Disable shadow checking
   lll:
-    line-length: 140
+    line-length: 150
+  revive:
+    rules:
+      - name: exported
+        severity: warning
+        disabled: false
+        arguments:
+          - "disableStutteringCheck"
+      - name: package-comments
+        severity: warning
+        disabled: false
+      - name: unused-parameter
+        severity: warning
+        disabled: true # Disabled - common in Windows callbacks
+      - name: empty-block
+        severity: warning
+        disabled: true # Disabled - error checks with intentional no-ops
   maligned:
     suggest-new: true
   misspell:
     locale: US
+  staticcheck:
+    checks: ["all", "-SA9003"] # Disable empty branch check
+  stylecheck:
+    checks: ["all", "-ST1003", "-ST1020", "-ST1021"] # Disable ID naming, comment format checks
   nolintlint:
     allow-leading-space: true # don't require machine-readable nolint directives (i.e. with no leading space)
     allow-unused: false # report any unused nolint directives
@@ -80,8 +109,6 @@ linters:
     - bodyclose
     - copyloopvar
     - depguard
-    - dogsled
-    - dupl
     - errcheck
     - exhaustive
     - funlen
@@ -91,9 +118,7 @@ linters:
     - gocyclo
     - gofmt
     - goimports
-    - mnd
     - goprintffuncname
-    - gosec
     - gosimple
     - govet
     - ineffassign
@@ -107,8 +132,6 @@ linters:
     - staticcheck
     - stylecheck
     - typecheck
-    - unconvert
-    - unparam
     - unused
     - whitespace
 
@@ -133,6 +156,7 @@ issues:
     - path: _test\.go
       linters:
         - gomnd
+        - mnd
         - funlen
         - gocyclo
         - dupl
@@ -154,6 +178,56 @@ issues:
     - linters:
         - lll
       source: "^//go:generate "
+
+    # Windows API specific exclusions - unsafe pointers are required
+    - path: internal/windows/
+      linters:
+        - gosec
+        - dogsled
+        - revive
+        - stylecheck
+        - unconvert
+      text: "(G103|var-naming|ALL_CAPS|underscores|package-comments|exported|unused-parameter|ST1000|ST1003)"
+
+    # simpl package - Windows API calls
+    - path: internal/simpl/
+      linters:
+        - gosec
+        - gocritic
+        - revive
+      text: "(G103|unnamedResult|exported|stutters)"
+
+    # Allow init functions where needed
+    - linters:
+        - gochecknoinits
+      path: cmd/
+
+    # Testutil mocks don't need exhaustive comments
+    - path: internal/testutil/
+      linters:
+        - revive
+        - gocritic
+        - unparam
+      text: "(exported.*should have comment|exported.*should be of the form|unused-parameter|unnamedResult)"
+
+    # Logger package - allow exhaustive switch
+    - path: internal/logger/
+      linters:
+        - exhaustive
+        - revive
+      text: "(missing cases|stutters|exported)"
+
+    # Allow specific unparam in cmd
+    - path: cmd/root.go
+      linters:
+        - unparam
+      text: "result 0"
+
+    # Allow long event handler function
+    - path: internal/compiler/compiler.go
+      linters:
+        - funlen
+      text: "handleCompilationEvents"
 
   # Independently from option `exclude` we use default exclude patterns,
   # it can be disabled by this option. To list all

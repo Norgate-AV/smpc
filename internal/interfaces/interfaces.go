@@ -1,3 +1,4 @@
+// Package interfaces defines core interfaces for dependency injection and testing.
 package interfaces
 
 import (

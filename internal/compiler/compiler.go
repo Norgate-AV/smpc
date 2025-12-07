@@ -1,3 +1,4 @@
+// Package compiler handles SIMPL Windows compilation orchestration and result parsing.
 package compiler
 
 import (

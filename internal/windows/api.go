@@ -38,7 +38,6 @@ var (
 	procGetWindowTextW           = user32.NewProc("GetWindowTextW")
 	procGetWindowThreadProcessId = user32.NewProc("GetWindowThreadProcessId")
 	procAttachThreadInput        = user32.NewProc("AttachThreadInput")
-	procGetCurrentThreadId       = kernel32.NewProc("GetCurrentThreadId")
 	procIsWindow                 = user32.NewProc("IsWindow")
 	procIsWindowVisible          = user32.NewProc("IsWindowVisible")
 	ProcSendMessageTimeoutW      = user32.NewProc("SendMessageTimeoutW")

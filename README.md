@@ -6,7 +6,7 @@
 [![Release](https://img.shields.io/github/v/release/Norgate-AV/smpc)](https://github.com/Norgate-AV/smpc/releases)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A tool to automate compiling [Crestron][crestron] [SIMPL Windows][smpwin] programs.
+A CLI tool to automate compiling [Crestron][crestron] [SIMPL Windows][smpwin] programs.
 
 [crestron]: https://www.crestron.com/
 [smpwin]: https://www.crestron.com/Products/Catalog/Control-and-Management/Software/Programming-Commissioning/SW-SIMPL

@@ -1,3 +1,4 @@
+// Package cmd implements the command-line interface for smpc.
 package cmd
 
 import "github.com/spf13/cobra"

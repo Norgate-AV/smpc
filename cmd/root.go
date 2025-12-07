@@ -30,6 +30,7 @@ type ExecutionContext struct {
 	exitFunc    func(int) // Injectable for testing; defaults to os.Exit
 }
 
+// RootCmd is the root command for the smpc CLI application.
 var RootCmd = &cobra.Command{
 	Use:          "smpc <file-path>",
 	Short:        "smpc - Automate compilation of .smw files",
@@ -254,6 +255,7 @@ func displayCompilationResults(result *compiler.CompileResult, log logger.Logger
 	)
 }
 
+// Execute runs the provided command with the given arguments.
 func Execute(cmd *cobra.Command, args []string) error {
 	cfg := NewConfigFromFlags(cmd)
 

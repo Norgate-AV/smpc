@@ -1,3 +1,4 @@
+// Package version provides build version information.
 package version
 
 var (
@@ -14,12 +15,12 @@ func GetVersion() string {
 	return version
 }
 
-// Commit returns the git commit hash
+// GetCommit returns the git commit hash.
 func GetCommit() string {
 	return commit
 }
 
-// Date returns the build date
+// GetDate returns the build date.
 func GetDate() string {
 	return date
 }

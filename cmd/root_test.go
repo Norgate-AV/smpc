@@ -72,7 +72,6 @@ func TestValidateArgs_InvalidExtension(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt // Capture range variable
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -293,13 +292,10 @@ func TestRootCmd_Flags(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt // Capture range variable
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			resetFlags()
-
-			// Create a new command instance to avoid flag conflicts
+			resetFlags() // Create a new command instance to avoid flag conflicts
 			cmd := &cobra.Command{
 				Use: "test",
 			}

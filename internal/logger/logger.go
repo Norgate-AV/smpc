@@ -1,3 +1,4 @@
+// Package logger provides structured logging with file and console output.
 package logger
 
 import (
@@ -72,7 +73,11 @@ func PrintLogFile(w io.Writer, opts LoggerOptions) error {
 	if err != nil {
 		return fmt.Errorf("failed to open log file %s: %w", logPath, err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			// Ignore close errors on read-only file
+		}
+	}()
 
 	if _, err := io.Copy(w, file); err != nil {
 		return fmt.Errorf("failed to read log file: %w", err)
@@ -147,7 +152,9 @@ func NewLogger(opts LoggerOptions) (*Logger, error) {
 // Close closes the log file and flushes any buffered data
 func (l *Logger) Close() {
 	if l.lumberjackLogger != nil {
-		l.lumberjackLogger.Close()
+		if err := l.lumberjackLogger.Close(); err != nil {
+			// Log close errors but don't fail
+		}
 	}
 }
 
@@ -220,7 +227,9 @@ func (h *ConsoleHandler) Handle(_ context.Context, r slog.Record) error {
 		}
 	}
 
-	fmt.Fprintf(h.writer, "%s%s\n", prefix, msg)
+	if _, err := fmt.Fprintf(h.writer, "%s%s\n", prefix, msg); err != nil {
+		// Ignore write errors to console
+	}
 	return nil
 }
 

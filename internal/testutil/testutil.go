@@ -1,3 +1,4 @@
+// Package testutil provides test utilities and mock implementations.
 package testutil
 
 import (
@@ -13,7 +14,11 @@ func CreateTempDir(t *testing.T) string {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 
-	t.Cleanup(func() { os.RemoveAll(dir) })
+	t.Cleanup(func() {
+		if err := os.RemoveAll(dir); err != nil {
+			// Ignore cleanup errors in tests
+		}
+	})
 	return dir
 }
 

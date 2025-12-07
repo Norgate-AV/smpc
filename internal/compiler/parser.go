@@ -5,7 +5,7 @@ import (
 	"regexp"
 )
 
-// parseStatLine parses a line like "Program Warnings: 1" and returns (1, true) if matched, else (0, false)
+// ParseStatLine parses a line like "Program Warnings: 1" and returns (1, true) if matched, else (0, false).
 func ParseStatLine(line, prefix string) (int, bool) {
 	pattern := "^" + regexp.QuoteMeta(prefix) + `\s*:\s*(\d+)`
 	re := regexp.MustCompile(pattern)
@@ -23,7 +23,7 @@ func ParseStatLine(line, prefix string) (int, bool) {
 	return n, true
 }
 
-// parseCompileTimeLine parses a line like "Compile Time: 0.23 seconds" and returns (0.23, true) if matched, else (0, false)
+// ParseCompileTimeLine parses a line like "Compile Time: 0.23 seconds" and returns (0.23, true) if matched, else (0, false).
 func ParseCompileTimeLine(line string) (float64, bool) {
 	pattern := `^Compile Time\s*:\s*([0-9.]+)\s*(s|seconds)?`
 	re := regexp.MustCompile(pattern)

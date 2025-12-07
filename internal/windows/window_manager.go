@@ -86,7 +86,10 @@ func (w *windowManager) SetForeground(hwnd uintptr) bool {
 	success := ret != 0
 
 	// Detach threads
-	procAttachThreadInput.Call(targetThreadID, fgThreadID, 0)
+	ret, _, _ = procAttachThreadInput.Call(targetThreadID, fgThreadID, 0)
+	if ret == 0 {
+		w.log.Warn("Failed to detach threads")
+	}
 
 	if success {
 		w.log.Debug("SetForegroundWindow succeeded (with AttachThreadInput)")

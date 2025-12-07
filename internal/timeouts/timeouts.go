@@ -1,3 +1,4 @@
+// Package timeouts defines timeout and delay constants for SIMPL Windows operations.
 package timeouts
 
 import "time"

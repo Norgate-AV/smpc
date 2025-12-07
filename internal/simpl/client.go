@@ -1,3 +1,4 @@
+// Package simpl provides SIMPL Windows process management and interaction.
 package simpl
 
 import (

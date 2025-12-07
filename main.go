@@ -1,3 +1,4 @@
+// Package main is the entry point for the smpc command-line tool.
 package main
 
 import (
