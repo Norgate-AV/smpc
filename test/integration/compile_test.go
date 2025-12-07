@@ -109,7 +109,7 @@ func TestIntegration_CompileWithErrors(t *testing.T) {
 	fixturePath := getFixturePath(t, "error.smw")
 	require.FileExists(t, fixturePath, "Fixture file should exist")
 
-	result, cleanup := compileFile(t, fixturePath, false)
+	result, cleanup := compileFile(t, fixturePath, true)
 	defer cleanup()
 
 	// Verify compilation failed with errors
