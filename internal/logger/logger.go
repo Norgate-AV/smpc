@@ -21,10 +21,14 @@ const (
 
 	// DefaultLogMaxAge is the default maximum number of days to retain old log files
 	DefaultLogMaxAge = 28
+
+	// LevelTrace is a custom log level below Debug, only logged to file
+	LevelTrace = slog.LevelDebug - 4
 )
 
 // LoggerInterface defines the logging methods
 type LoggerInterface interface {
+	Trace(msg string, args ...any) // Only logs to file, never to console
 	Debug(msg string, args ...any)
 	Info(msg string, args ...any)
 	Warn(msg string, args ...any)
@@ -126,9 +130,16 @@ func NewLogger(opts LoggerOptions) (*Logger, error) {
 		Compress:   opts.Compress,
 	}
 
-	// File logger: structured text with all fields
+	// File logger: structured text with all fields (including Trace level)
 	fileLogger := slog.New(slog.NewTextHandler(lumberjackLogger, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
+		Level: LevelTrace, // Set to LevelTrace to capture all levels including Trace
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			// Replace "DEBUG-4" with "TRACE" in the level attribute
+			if a.Key == slog.LevelKey && a.Value.Any().(slog.Level) == LevelTrace {
+				a.Value = slog.StringValue("TRACE")
+			}
+			return a
+		},
 	}))
 
 	// Console logger: clean output without timestamps
@@ -153,7 +164,8 @@ func NewLogger(opts LoggerOptions) (*Logger, error) {
 func (l *Logger) Close() {
 	if l.lumberjackLogger != nil {
 		if err := l.lumberjackLogger.Close(); err != nil {
-			// Log close errors but don't fail
+			// Log to stderr since we're closing the log file
+			fmt.Fprintf(os.Stderr, "ERROR: Failed to close log file: %v\n", err)
 		}
 	}
 }
@@ -161,6 +173,11 @@ func (l *Logger) Close() {
 // GetLogPath returns the path to the current log file
 func (l *Logger) GetLogPath() string {
 	return l.logPath
+}
+
+// Trace logs a trace message (file only, never to console)
+func (l *Logger) Trace(msg string, args ...any) {
+	l.file.Log(context.Background(), LevelTrace, msg, args...)
 }
 
 // Debug logs a debug message
@@ -194,6 +211,11 @@ type ConsoleHandler struct {
 }
 
 func (h *ConsoleHandler) Enabled(_ context.Context, level slog.Level) bool {
+	// Trace level never goes to console
+	if level == LevelTrace {
+		return false
+	}
+
 	if !h.verbose && level == slog.LevelDebug {
 		return false
 	}
@@ -209,7 +231,7 @@ func (h *ConsoleHandler) Handle(_ context.Context, r slog.Record) error {
 	case slog.LevelWarn:
 		prefix = "WARNING: "
 	case slog.LevelDebug:
-		prefix = "[DEBUG] "
+		prefix = "VERBOSE: "
 	}
 
 	// Build the message with attributes
@@ -258,6 +280,7 @@ func (h *ConsoleHandler) WithGroup(_ string) slog.Handler {
 // NoOpLogger is a logger that does nothing - useful for tests
 type NoOpLogger struct{}
 
+func (n *NoOpLogger) Trace(msg string, args ...any) {}
 func (n *NoOpLogger) Debug(msg string, args ...any) {}
 func (n *NoOpLogger) Info(msg string, args ...any)  {}
 func (n *NoOpLogger) Warn(msg string, args ...any)  {}

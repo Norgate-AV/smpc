@@ -52,12 +52,12 @@ func (m *monitorManager) StartWindowMonitor(ctx context.Context, pid uint32, int
 						slog.String("title", w.Title),
 					)
 
-					// Enumerate child controls and log their text
+					// Enumerate child controls and log their text (trace level - file only)
 					childTexts := CollectChildTexts(w.Hwnd)
 					if len(childTexts) > 0 {
 						for _, ct := range childTexts {
 							if ct != "" {
-								m.log.Debug("Child control", slog.String("text", ct))
+								m.log.Trace("Child control text", slog.String("text", ct))
 							}
 						}
 					}
