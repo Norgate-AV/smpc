@@ -44,10 +44,6 @@ const (
 	// allow the dialog to process the input and respond.
 	DialogResponseDelay = 300 * time.Millisecond
 
-	// DialogOperationCompleteTimeout is the maximum time to wait for the
-	// "Operation Complete" dialog to appear after initiating a compilation.
-	DialogOperationCompleteTimeout = 3 * time.Second
-
 	// DialogConfirmationTimeout is the maximum time to wait for a
 	// confirmation dialog to appear.
 	DialogConfirmationTimeout = 2 * time.Second
