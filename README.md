@@ -127,7 +127,7 @@ compilation completes. You can view the compilation logs afterward using `smpc -
 
 ### CI/CD Environments
 
-For automated builds in CI/CD pipelines (GitHub Actions, Jenkins, etc.), UAC prompts will block
+For automated builds in CI/CD pipelines, UAC prompts will block
 execution. Additionally, **UI automation requires access to an interactive desktop session**.
 
 #### Critical Requirement: Interactive Desktop Session
