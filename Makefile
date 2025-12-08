@@ -5,6 +5,8 @@ SRC_DIR := .
 BUILD_DIR := bin
 DIST_DIR := dist
 COVERAGE_DIR := .coverage
+GOBIN := $(shell go env GOBIN)
+INSTALL_DIR := $(if $(GOBIN),$(GOBIN),$(shell go env GOPATH)/bin)
 
 GO_MODULE := github.com/Norgate-AV/$(APP_NAME)
 
@@ -35,7 +37,7 @@ clean:
 
 .PHONY: install
 install: build
-	go install ./...
+	cp $(BUILD_DIR)/$(TARGET) $(INSTALL_DIR)/$(TARGET)
 
 .PHONY: test
 test:
