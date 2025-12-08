@@ -48,7 +48,8 @@ go install github.com/Norgate-AV/smpc@latest
 
 ## Usage
 
-**Note**: This tool requires administrator privileges. See [Administrator Privileges](#administrator-privileges) for details.
+**Note**: This tool requires administrator privileges. See
+[Administrator Privileges](#administrator-privileges) for details.
 
 Compile a SIMPL Windows program:
 
@@ -113,7 +114,30 @@ This tool requires elevated permissions to:
 For the best experience, run `smpc` from an administrator terminal. This allows you to see the
 compilation output and logs directly in your terminal.
 
-If you run `smpc` from a non-elevated terminal, it will automatically:
+#### Using `sudo` for Elevation
+
+The recommended approach for elevation is to use a `sudo` command, which elevates in the current
+terminal session and properly returns exit codes:
+
+```powershell
+# Windows native sudo (Windows 11 24H2+)
+sudo smpc path/to/your/program.smw
+
+# Or using gsudo (cross-platform, install via scoop)
+scoop install gsudo
+sudo smpc path/to/your/program.smw
+```
+
+**Benefits of using `sudo`:**
+
+- Elevates in the current terminal (no new window)
+- Properly propagates exit codes to your shell
+- Ideal for scripting and automation
+- Works in PowerShell, CMD, and other shells
+
+#### Auto-Elevation
+
+If you run `smpc` from a non-elevated terminal without `sudo`, it will automatically:
 
 - Check if it's running with administrator privileges
 - If not, display a UAC (User Account Control) prompt to request elevation
@@ -122,8 +146,12 @@ If you run `smpc` from a non-elevated terminal, it will automatically:
 You may see a UAC prompt asking "Do you want to allow this app to make changes to your device?" -
 click **Yes** to continue.
 
-**Note**: When auto-elevation occurs, the new terminal window will close immediately after
-compilation completes. You can view the compilation logs afterward using `smpc --logs`.
+**Note**: When auto-elevation occurs:
+
+- The new terminal window will close immediately after compilation completes
+- Exit codes are not propagated back to the original terminal (always returns 0)
+- You can view the compilation logs afterward using `smpc --logs`
+- For scripts that need exit codes, use `sudo` instead
 
 ### CI/CD Environments
 
