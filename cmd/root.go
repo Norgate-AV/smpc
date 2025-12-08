@@ -30,6 +30,16 @@ type ExecutionContext struct {
 	exitFunc    func(int) // Injectable for testing; defaults to os.Exit
 }
 
+// CompilationParams holds parameters for running compilation
+type CompilationParams struct {
+	FilePath string
+	Hwnd     uintptr
+	Pid      uint32
+	PidPtr   *uint32
+	Config   *Config
+	Logger   logger.LoggerInterface
+}
+
 // RootCmd is the root command for the smpc CLI application.
 var RootCmd = &cobra.Command{
 	Use:          "smpc <file-path>",
@@ -227,18 +237,18 @@ func waitForWindowReady(simplClient *simpl.Client, pid uint32, log logger.Logger
 }
 
 // runCompilation creates a compiler and executes the compilation
-func runCompilation(absPath string, hwnd uintptr, pid uint32, pidPtr *uint32, cfg *Config, log logger.LoggerInterface) (*compiler.CompileResult, error) {
-	comp := compiler.NewCompiler(log)
+func runCompilation(params CompilationParams) (*compiler.CompileResult, error) {
+	comp := compiler.NewCompiler(params.Logger)
 
 	result, err := comp.Compile(compiler.CompileOptions{
-		FilePath:     absPath,
-		RecompileAll: cfg.RecompileAll,
-		Hwnd:         hwnd,
-		SimplPid:     pid,
-		SimplPidPtr:  pidPtr,
+		FilePath:     params.FilePath,
+		RecompileAll: params.Config.RecompileAll,
+		Hwnd:         params.Hwnd,
+		SimplPid:     params.Pid,
+		SimplPidPtr:  params.PidPtr,
 	})
 	if err != nil {
-		log.Error("Compilation failed", slog.Any("error", err))
+		params.Logger.Error("Compilation failed", slog.Any("error", err))
 		return nil, err
 	}
 
@@ -340,7 +350,14 @@ func Execute(cmd *cobra.Command, args []string) error {
 
 	defer simplClient.Cleanup(hwnd, pid)
 
-	result, err := runCompilation(absPath, hwnd, pid, &ctx.simplPid, cfg, log)
+	result, err := runCompilation(CompilationParams{
+		FilePath: absPath,
+		Hwnd:     hwnd,
+		Pid:      pid,
+		PidPtr:   &ctx.simplPid,
+		Config:   cfg,
+		Logger:   log,
+	})
 	if err != nil {
 		return err
 	}
