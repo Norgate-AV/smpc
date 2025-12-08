@@ -210,16 +210,26 @@ func (c *Client) Cleanup(hwnd uintptr, pid uint32) {
 
 	// Try to close gracefully
 	c.win.Window.CloseWindow(hwnd, "SIMPL Windows")
-	time.Sleep(timeouts.CleanupDelay)
 
-	// Verify the window is actually closed by checking if the window still exists
-	if windows.IsWindow(hwnd) {
-		c.log.Warn("SIMPL Windows did not close properly")
-		// Force terminate the specific process we launched
-		if pid != 0 {
-			c.log.Debug("Attempting to force terminate process", slog.Uint64("pid", uint64(pid)))
-			_ = windows.TerminateProcess(pid)
+	// Poll for up to 3 seconds to see if window closes
+	maxWait := 3 * time.Second
+	pollInterval := 200 * time.Millisecond
+	deadline := time.Now().Add(maxWait)
+
+	for time.Now().Before(deadline) {
+		if !windows.IsWindow(hwnd) {
+			c.log.Debug("Window closed successfully")
+			return
 		}
+
+		time.Sleep(pollInterval)
+	}
+
+	// Window still exists after waiting - force terminate
+	c.log.Warn("SIMPL Windows did not close properly after waiting")
+	if pid != 0 {
+		c.log.Debug("Attempting to force terminate process", slog.Uint64("pid", uint64(pid)))
+		_ = windows.TerminateProcess(pid)
 	}
 }
 
