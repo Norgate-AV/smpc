@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -500,4 +501,83 @@ func TestValidateAndResolvePath_DirectoryInsteadOfFile(t *testing.T) {
 	assert.NoError(t, err, "Function doesn't validate file type, only existence")
 	assert.NotEmpty(t, absPath, "Should return absolute path")
 	assert.True(t, filepath.IsAbs(absPath), "Should return absolute path")
+}
+
+// TestEnsureElevated_AlreadyElevated tests when process is already elevated
+func TestEnsureElevated_AlreadyElevated(t *testing.T) {
+	t.Parallel()
+
+	mockLog := logger.NewNoOpLogger()
+	exitCalled := false
+	relaunchCalled := false
+
+	isElevated := func() bool { return true }
+	relaunchAsAdmin := func() error {
+		relaunchCalled = true
+		return nil
+	}
+	exitFunc := func(code int) {
+		exitCalled = true
+	}
+
+	err := ensureElevatedWithDeps(mockLog, isElevated, relaunchAsAdmin, exitFunc)
+
+	assert.NoError(t, err, "Should not error when already elevated")
+	assert.False(t, relaunchCalled, "Should not relaunch when already elevated")
+	assert.False(t, exitCalled, "Should not exit when already elevated")
+}
+
+// TestEnsureElevated_NotElevated_SuccessfulRelaunch tests auto-elevation flow
+func TestEnsureElevated_NotElevated_SuccessfulRelaunch(t *testing.T) {
+	t.Parallel()
+
+	mockLog := logger.NewNoOpLogger()
+	exitCode := -1
+	exitCalled := false
+	relaunchCalled := false
+
+	isElevated := func() bool { return false }
+	relaunchAsAdmin := func() error {
+		relaunchCalled = true
+		return nil
+	}
+	exitFunc := func(code int) {
+		exitCode = code
+		exitCalled = true
+	}
+
+	err := ensureElevatedWithDeps(mockLog, isElevated, relaunchAsAdmin, exitFunc)
+
+	// The function should not return an error - it calls exitFunc instead
+	assert.NoError(t, err, "Should not return error on successful relaunch")
+	assert.True(t, relaunchCalled, "Should call relaunch when not elevated")
+	assert.True(t, exitCalled, "Should call exit after successful relaunch")
+	assert.Equal(t, 0, exitCode, "Should exit with code 0 after successful relaunch")
+}
+
+// TestEnsureElevated_NotElevated_RelaunchFails tests relaunch failure handling
+func TestEnsureElevated_NotElevated_RelaunchFails(t *testing.T) {
+	t.Parallel()
+
+	mockLog := logger.NewNoOpLogger()
+	exitCalled := false
+	relaunchCalled := false
+	relaunchErr := fmt.Errorf("failed to relaunch")
+
+	isElevated := func() bool { return false }
+	relaunchAsAdmin := func() error {
+		relaunchCalled = true
+		return relaunchErr
+	}
+	exitFunc := func(code int) {
+		exitCalled = true
+	}
+
+	err := ensureElevatedWithDeps(mockLog, isElevated, relaunchAsAdmin, exitFunc)
+
+	assert.Error(t, err, "Should return error when relaunch fails")
+	assert.True(t, relaunchCalled, "Should attempt to relaunch")
+	assert.False(t, exitCalled, "Should not exit when relaunch fails")
+	assert.Contains(t, err.Error(), "error relaunching as admin", "Error should mention relaunch failure")
+	assert.ErrorIs(t, err, relaunchErr, "Should wrap the relaunch error")
 }

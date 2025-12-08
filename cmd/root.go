@@ -115,19 +115,30 @@ func initializeLogger(cfg *Config) (logger.LoggerInterface, error) {
 
 // ensureElevated checks for admin privileges and relaunches if needed
 func ensureElevated(log logger.LoggerInterface) error {
+	return ensureElevatedWithDeps(log, windows.IsElevated, windows.RelaunchAsAdmin, os.Exit)
+}
+
+// ensureElevatedWithDeps is the testable version with injected dependencies
+func ensureElevatedWithDeps(
+	log logger.LoggerInterface,
+	isElevated func() bool,
+	relaunchAsAdmin func() error,
+	exitFunc func(int),
+) error {
 	log.Debug("Checking elevation status")
-	if !windows.IsElevated() {
+	if !isElevated() {
 		log.Info("This program requires administrator privileges")
 		log.Info("Relaunching as administrator")
 
-		if err := windows.RelaunchAsAdmin(); err != nil {
+		if err := relaunchAsAdmin(); err != nil {
 			log.Error("RelaunchAsAdmin failed", slog.Any("error", err))
 			return fmt.Errorf("error relaunching as admin: %w", err)
 		}
 
 		// Exit this instance, the elevated one will continue
 		log.Debug("Relaunched successfully, exiting non-elevated instance")
-		return nil
+		log.Close()
+		exitFunc(0)
 	}
 
 	log.Debug("Running with administrator privileges")
