@@ -6,6 +6,10 @@
 [![Release](https://img.shields.io/github/v/release/Norgate-AV/smpc)](https://github.com/Norgate-AV/smpc/releases)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+<div align="center">
+  <img src="./assets/img/master_photo_a-sw-simpl.png" alt="SIMPL Windows logo" width="300"/>
+</div>
+
 A CLI tool to automate compiling [Crestron][crestron] [SIMPL Windows][smpwin] programs.
 
 [crestron]: https://www.crestron.com/
