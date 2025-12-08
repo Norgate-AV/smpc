@@ -44,7 +44,7 @@ go install github.com/Norgate-AV/smpc@latest
     make install
     ```
 
-    This will compile the `smpc` binary and place it in your `$GOBIN` directory.
+    This will compile the `smpc` binary and place it in your `$GOBIN` or `$GOPATH/bin` directory.
 
 ## Usage
 
