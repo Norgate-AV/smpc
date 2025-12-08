@@ -15,7 +15,7 @@ import (
 
 const (
 	// DefaultLogMaxSize is the default maximum size in megabytes before log rotation
-	DefaultLogMaxSize = 10
+	DefaultLogMaxSize = 2
 
 	// DefaultLogMaxBackups is the default number of old log files to retain
 	DefaultLogMaxBackups = 3
