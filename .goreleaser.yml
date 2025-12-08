@@ -12,7 +12,7 @@ before:
 
 builds:
   - main: ./main.go
-    binary: smpc.exe
+    binary: smpc
     env:
       - CGO_ENABLED=0
     goos:
