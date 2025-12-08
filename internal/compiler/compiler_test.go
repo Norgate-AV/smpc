@@ -38,6 +38,7 @@ func TestCompiler_SuccessfulCompilation(t *testing.T) {
 	opts := CompileOptions{
 		Hwnd:                          0x9999,
 		RecompileAll:                  false,
+		SimplPid:                      1234,
 		SkipPreCompilationDialogCheck: true,
 	}
 
@@ -101,6 +102,7 @@ func TestCompiler_RecompileAll(t *testing.T) {
 	opts := CompileOptions{
 		Hwnd:                          0x9999,
 		RecompileAll:                  true, // Trigger Alt+F12 instead of F12
+		SimplPid:                      1234,
 		SkipPreCompilationDialogCheck: true,
 	}
 
@@ -153,6 +155,7 @@ func TestCompiler_WithWarnings(t *testing.T) {
 
 	opts := CompileOptions{
 		Hwnd:                          0x9999,
+		SimplPid:                      1234,
 		SkipPreCompilationDialogCheck: true,
 	}
 
@@ -207,6 +210,7 @@ func TestCompiler_WithErrors(t *testing.T) {
 
 	opts := CompileOptions{
 		Hwnd:                          0x9999,
+		SimplPid:                      1234,
 		SkipPreCompilationDialogCheck: true,
 	}
 
@@ -254,6 +258,7 @@ func TestCompiler_IncompleteSymbols(t *testing.T) {
 
 	opts := CompileOptions{
 		Hwnd:                          0x9999,
+		SimplPid:                      1234,
 		SkipPreCompilationDialogCheck: true,
 	}
 
@@ -293,6 +298,7 @@ func TestCompiler_CompileDialogTimeout(t *testing.T) {
 
 	opts := CompileOptions{
 		Hwnd:                          0x9999,
+		SimplPid:                      1234,
 		SkipPreCompilationDialogCheck: true,
 		CompilationTimeout:            1 * time.Second, // Fast timeout for testing
 	}
@@ -335,6 +341,7 @@ func TestCompiler_NoPid(t *testing.T) {
 
 	opts := CompileOptions{
 		Hwnd:                          0x9999,
+		SimplPid:                      0, // No PID available
 		SkipPreCompilationDialogCheck: true,
 	}
 
@@ -379,6 +386,7 @@ func TestCompiler_WithSavePrompts(t *testing.T) {
 
 	opts := CompileOptions{
 		Hwnd:                          0x9999,
+		SimplPid:                      1234,
 		SkipPreCompilationDialogCheck: true,
 	}
 

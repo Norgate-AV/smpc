@@ -48,6 +48,7 @@ type CompileOptions struct {
 	FilePath                      string
 	RecompileAll                  bool
 	Hwnd                          uintptr
+	SimplPid                      uint32        // Known PID from ShellExecuteEx (preferred over searching)
 	SimplPidPtr                   *uint32       // Pointer to store PID for signal handlers
 	SkipPreCompilationDialogCheck bool          // For testing - skip the pre-compilation dialog check
 	CompilationTimeout            time.Duration // Override default timeout (0 = use default 5 minutes)
@@ -105,14 +106,13 @@ func NewCompilerWithDeps(log logger.LoggerInterface, deps *CompileDependencies) 
 func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 	result := &CompileResult{}
 
-	// Detect SIMPL Windows process PID for dialog monitoring
-	c.log.Debug("Getting SIMPL Windows process PID")
-	pid := c.processMgr.GetPid()
+	// Use the exact PID from ShellExecuteEx - no searching, no guessing
+	pid := opts.SimplPid
 	if pid == 0 {
-		c.log.Warn("Could not determine PID")
+		c.log.Warn("No PID provided - dialog monitoring will be disabled")
 		c.log.Info("Warning: Could not determine SIMPL Windows process PID; dialog detection may be limited")
 	} else {
-		c.log.Debug("SIMPL Windows PID detected", slog.Uint64("pid", uint64(pid)))
+		c.log.Debug("Using SIMPL Windows PID from launch", slog.Uint64("pid", uint64(pid)))
 		if opts.SimplPidPtr != nil {
 			*opts.SimplPidPtr = pid // Store for signal handler
 		}

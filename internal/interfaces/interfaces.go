@@ -30,7 +30,6 @@ type KeyboardInjector interface {
 
 // ProcessManager handles SIMPL process operations
 type ProcessManager interface {
-	GetPid() uint32
 	FindWindow(targetPid uint32, debug bool) (uintptr, string)
 	WaitForReady(hwnd uintptr, timeout time.Duration) bool
 }

@@ -249,14 +249,14 @@ func compileFile(t *testing.T, filePath string, recompileAll bool) (*compiler.Co
 	// Create SIMPL client
 	simplClient := simpl.NewClient(testLog)
 
-	// Start background window monitor
-	stopMonitor := simplClient.StartMonitoring()
-
 	// Open file with SIMPL Windows
 	t.Logf("Opening SIMPL Windows with file: %s", absPath)
 	pid, err := windows.ShellExecuteEx(0, "open", simpl.GetSimplWindowsPath(), absPath, "", 1, testLog)
 	require.NoError(t, err, "Should launch SIMPL Windows")
 	t.Logf("SIMPL Windows process started with PID: %d", pid)
+
+	// Start background window monitor with the exact PID we just launched
+	stopMonitor := simplClient.StartMonitoring(pid)
 
 	// Wait for process to start
 	time.Sleep(timeouts.WindowMessageDelay)
@@ -283,7 +283,7 @@ func compileFile(t *testing.T, filePath string, recompileAll bool) (*compiler.Co
 		t.Log("Cleaning up SIMPL Windows...")
 		stopMonitor()
 		if hwnd != 0 {
-			simplClient.Cleanup(hwnd)
+			simplClient.Cleanup(hwnd, pid)
 		}
 		// Give it time to close
 		time.Sleep(timeouts.FocusVerificationDelay)
@@ -299,6 +299,7 @@ func compileFile(t *testing.T, filePath string, recompileAll bool) (*compiler.Co
 		FilePath:     absPath,
 		RecompileAll: recompileAll,
 		Hwnd:         hwnd,
+		SimplPid:     simplPid,
 		SimplPidPtr:  &simplPid,
 	})
 	// Note: We don't require NoError here because some tests expect compilation to fail

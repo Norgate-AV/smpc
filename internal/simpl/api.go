@@ -18,10 +18,6 @@ func NewSimplProcessAPI(log logger.LoggerInterface) *SimplProcessAPI {
 	}
 }
 
-func (s SimplProcessAPI) GetPid() uint32 {
-	return s.client.GetPid()
-}
-
 func (s SimplProcessAPI) FindWindow(targetPid uint32, debug bool) (uintptr, string) {
 	return s.client.FindWindow(targetPid, debug)
 }

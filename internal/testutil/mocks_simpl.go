@@ -4,7 +4,7 @@ import "time"
 
 // MockProcessManager implements interfaces.ProcessManager for testing
 type MockProcessManager struct {
-	GetPidResult       uint32
+	pid                uint32 // Internal PID for WithPid() method
 	FindWindowResult   uintptr
 	FindWindowTitle    string
 	WaitForReadyResult bool
@@ -18,7 +18,7 @@ type FindWindowCall struct {
 
 func NewMockProcessManager() *MockProcessManager {
 	return &MockProcessManager{
-		GetPidResult:       12345,
+		pid:                0,
 		FindWindowResult:   0,
 		FindWindowTitle:    "",
 		WaitForReadyResult: true,
@@ -26,8 +26,9 @@ func NewMockProcessManager() *MockProcessManager {
 	}
 }
 
-func (m *MockProcessManager) GetPid() uint32 {
-	return m.GetPidResult
+func (m *MockProcessManager) WithPid(pid uint32) *MockProcessManager {
+	m.pid = pid
+	return m
 }
 
 func (m *MockProcessManager) FindWindow(targetPid uint32, debug bool) (uintptr, string) {
@@ -40,11 +41,6 @@ func (m *MockProcessManager) WaitForReady(hwnd uintptr, timeout time.Duration) b
 }
 
 // Helper methods for fluent configuration
-func (m *MockProcessManager) WithPid(pid uint32) *MockProcessManager {
-	m.GetPidResult = pid
-	return m
-}
-
 func (m *MockProcessManager) WithFindWindowResult(hwnd uintptr, title string) *MockProcessManager {
 	m.FindWindowResult = hwnd
 	m.FindWindowTitle = title

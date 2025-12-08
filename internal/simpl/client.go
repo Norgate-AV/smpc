@@ -27,14 +27,8 @@ func NewClient(log logger.LoggerInterface) *Client {
 	}
 }
 
-// GetPid retrieves the PID of smpwin.exe, returns 0 if not found
-func (c *Client) GetPid() uint32 {
-	return findProcessByName("smpwin.exe")
-}
-
 // FindWindow searches for the SIMPL Windows main window belonging to a specific process
-// If targetPid is 0, it will search for any smpwin.exe process (legacy behavior)
-// The seenWindows map tracks windows that have already been logged to avoid repetitive output
+// targetPid must be a valid process ID - passing 0 will return no results
 func (c *Client) FindWindow(targetPid uint32, debug bool) (uintptr, string) {
 	result := c.findWindowWithTracking(targetPid, debug, nil)
 	return result.mainHwnd, result.mainTitle
@@ -52,20 +46,14 @@ type windowSearchResult struct {
 func (c *Client) findWindowWithTracking(targetPid uint32, debug bool, seenWindows map[uintptr]bool) windowSearchResult {
 	result := windowSearchResult{}
 
-	// If no target PID specified, search for any smpwin.exe process
+	// Must have a valid PID to search for windows
 	if targetPid == 0 {
-		targetPid = findProcessByName("smpwin.exe")
-
-		if targetPid == 0 {
-			if debug {
-				c.log.Debug("smpwin.exe process not found")
-			}
-
-			return result
+		if debug {
+			c.log.Debug("No PID provided for window search")
 		}
+		return result
 	}
 
-	// Now enumerate all windows
 	// Enumerate windows (thread-safe)
 	windowsList := windows.EnumerateWindows()
 
@@ -172,7 +160,7 @@ func (c *Client) WaitForReady(hwnd uintptr, timeout time.Duration) bool {
 }
 
 // WaitForAppear waits for the SIMPL Windows main window to appear for a specific process
-// If targetPid is 0, it will search for any smpwin.exe process
+// targetPid must be a valid process ID - passing 0 will immediately return failure
 func (c *Client) WaitForAppear(targetPid uint32, timeout time.Duration) (uintptr, bool) {
 	deadline := time.Now().Add(timeout)
 	seenWindows := make(map[uintptr]bool) // Track windows we've already logged
@@ -208,7 +196,7 @@ func (c *Client) WaitForAppear(targetPid uint32, timeout time.Duration) (uintptr
 }
 
 // Cleanup ensures SIMPL Windows is properly closed, with fallback to force termination
-func (c *Client) Cleanup(hwnd uintptr) {
+func (c *Client) Cleanup(hwnd uintptr, pid uint32) {
 	if hwnd == 0 {
 		return
 	}
@@ -224,12 +212,10 @@ func (c *Client) Cleanup(hwnd uintptr) {
 	c.win.Window.CloseWindow(hwnd, "SIMPL Windows")
 	time.Sleep(timeouts.CleanupDelay)
 
-	// Verify the window is actually closed - check any smpwin.exe process
-	testHwnd, _ := c.FindWindow(0, false)
-	if testHwnd != 0 {
+	// Verify the window is actually closed by checking if the window still exists
+	if windows.IsWindow(hwnd) {
 		c.log.Warn("SIMPL Windows did not close properly")
-		// If we have the PID, attempt to terminate the process
-		pid := c.GetPid()
+		// Force terminate the specific process we launched
 		if pid != 0 {
 			c.log.Debug("Attempting to force terminate process", slog.Uint64("pid", uint64(pid)))
 			_ = windows.TerminateProcess(pid)
@@ -237,15 +223,14 @@ func (c *Client) Cleanup(hwnd uintptr) {
 	}
 }
 
-// ForceCleanup attempts to forcefully close SIMPL Windows using multiple strategies.
-// It tries three approaches in order:
-// 1. Use hwnd if available (graceful close)
+// ForceCleanup attempts to forcefully close SIMPL Windows using the known PID.
+// It tries two approaches in order:
+// 1. Use hwnd if available (graceful close with PID for force termination)
 // 2. Use known PID (forced termination)
-// 3. Search for process and terminate (last resort)
 func (c *Client) ForceCleanup(hwnd uintptr, knownPid uint32) {
 	// Strategy 1: Use hwnd if available for graceful close
 	if hwnd != 0 {
-		c.Cleanup(hwnd)
+		c.Cleanup(hwnd, knownPid)
 		return
 	}
 
@@ -256,41 +241,20 @@ func (c *Client) ForceCleanup(hwnd uintptr, knownPid uint32) {
 		return
 	}
 
-	// Strategy 3: Last resort - search for process and terminate
-	pid := c.GetPid()
-	if pid != 0 {
-		c.log.Debug("Force terminating found process", slog.Uint64("pid", uint64(pid)))
-		_ = windows.TerminateProcess(pid)
-	} else {
-		c.log.Warn("Unable to find SIMPL Windows process for cleanup")
-	}
+	c.log.Warn("Unable to cleanup SIMPL Windows - no hwnd or PID provided")
 }
 
-// StartMonitoring starts a background goroutine that monitors SIMPL Windows dialogs
+// StartMonitoring starts a background goroutine that monitors SIMPL Windows dialogs for a specific PID
 // Returns a function to stop the monitoring
-func (c *Client) StartMonitoring() func() {
+func (c *Client) StartMonitoring(pid uint32) func() {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
-		// Try to obtain PID repeatedly until found, then monitor that PID
-		var pid uint32
-
-		for i := 0; i < 50 && pid == 0; i++ { // up to ~5s
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				pid = c.GetPid()
-				if pid == 0 {
-					time.Sleep(timeouts.StatePollingInterval)
-				}
-			}
-		}
-
 		// Init channel
 		windows.MonitorCh = make(chan windows.WindowEvent, 64)
+
 		if pid == 0 {
-			c.log.Debug("Window monitor falling back to all processes (SIMPL PID not found yet)")
+			c.log.Warn("Window monitor started with PID=0, monitoring all processes (not recommended)")
 			c.win.Monitor.StartWindowMonitor(ctx, 0, timeouts.MonitorPollingInterval)
 		} else {
 			c.log.Debug("Window monitor targeting SIMPL PID", slog.Uint64("pid", uint64(pid)))

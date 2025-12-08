@@ -140,23 +140,22 @@ func validateAndResolvePath(filePath string, log logger.LoggerInterface) (string
 	return absPath, nil
 }
 
-// launchSIMPLWindows starts monitoring, launches SIMPL, and returns cleanup function
+// launchSIMPLWindows launches SIMPL, starts monitoring with the PID, and returns cleanup function
 func launchSIMPLWindows(simplClient *simpl.Client, absPath string, log logger.LoggerInterface) (hwnd uintptr, pid uint32, cleanup func(), err error) {
-	// Start background window monitor
-	stopMonitor := simplClient.StartMonitoring()
-	log.Debug("Background window monitor started")
-
 	// Open the file with SIMPL Windows application using elevated privileges
 	// SW_SHOWNORMAL = 1
 	log.Debug("Launching SIMPL Windows with file", slog.String("path", absPath))
 	pid, err = windows.ShellExecuteEx(0, "open", simpl.GetSimplWindowsPath(), absPath, "", 1, log)
 	if err != nil {
-		stopMonitor()
 		log.Error("ShellExecuteEx failed", slog.Any("error", err))
 		return 0, 0, nil, fmt.Errorf("error opening file: %w", err)
 	}
 
 	log.Info("SIMPL Windows process started", slog.Uint64("pid", uint64(pid)))
+
+	// Start background window monitor with the exact PID we just launched
+	stopMonitor := simplClient.StartMonitoring(pid)
+	log.Debug("Background window monitor started")
 
 	// Return cleanup function that stops monitor
 	cleanup = func() {
@@ -228,13 +227,14 @@ func waitForWindowReady(simplClient *simpl.Client, pid uint32, log logger.Logger
 }
 
 // runCompilation creates a compiler and executes the compilation
-func runCompilation(absPath string, hwnd uintptr, pidPtr *uint32, cfg *Config, log logger.LoggerInterface) (*compiler.CompileResult, error) {
+func runCompilation(absPath string, hwnd uintptr, pid uint32, pidPtr *uint32, cfg *Config, log logger.LoggerInterface) (*compiler.CompileResult, error) {
 	comp := compiler.NewCompiler(log)
 
 	result, err := comp.Compile(compiler.CompileOptions{
 		FilePath:     absPath,
 		RecompileAll: cfg.RecompileAll,
 		Hwnd:         hwnd,
+		SimplPid:     pid,
 		SimplPidPtr:  pidPtr,
 	})
 	if err != nil {
@@ -338,9 +338,9 @@ func Execute(cmd *cobra.Command, args []string) error {
 	ctx.simplHwnd = hwnd
 	log.Debug("Stored hwnd in execution context", slog.Uint64("hwnd", uint64(hwnd)))
 
-	defer simplClient.Cleanup(hwnd)
+	defer simplClient.Cleanup(hwnd, pid)
 
-	result, err := runCompilation(absPath, hwnd, &ctx.simplPid, cfg, log)
+	result, err := runCompilation(absPath, hwnd, pid, &ctx.simplPid, cfg, log)
 	if err != nil {
 		return err
 	}
