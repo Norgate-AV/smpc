@@ -128,8 +128,8 @@ func TestValidateArgs_LogsFlag(t *testing.T) {
 
 	// Setup logger to temp directory
 	oldLocalAppData := os.Getenv("LOCALAPPDATA")
-	defer os.Setenv("LOCALAPPDATA", oldLocalAppData)
-	os.Setenv("LOCALAPPDATA", tmpDir)
+	defer func() { _ = os.Setenv("LOCALAPPDATA", oldLocalAppData) }()
+	_ = os.Setenv("LOCALAPPDATA", tmpDir)
 
 	// Initialize logger
 	log, err := logger.NewLogger(logger.LoggerOptions{Verbose: false})
@@ -168,7 +168,7 @@ func TestValidateArgs_LogsFlag(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Restore stdout
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	// Read captured output
@@ -340,7 +340,7 @@ func TestRootCmd_InvalidFlag(t *testing.T) {
 	err := RootCmd.Execute()
 
 	// Restore stderr
-	w.Close()
+	_ = w.Close()
 	os.Stderr = oldStderr
 
 	// Read error output
@@ -365,7 +365,7 @@ func captureCommandOutput(_ *testing.T, args []string) string {
 	_ = RootCmd.Execute()
 
 	// Restore stdout
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	// Read output

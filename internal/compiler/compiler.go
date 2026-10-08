@@ -21,14 +21,16 @@ const (
 	msgTypeNotice  = "NOTICE"
 
 	// Dialog title constants
-	dialogIncompleteSymbols   = "Incomplete Symbols"
-	dialogConvertCompile      = "Convert/Compile"
-	dialogCommentedOutSymbols = "Commented out Symbols and/or Devices"
-	dialogCompiling           = "Compiling..."
-	dialogCompileComplete     = "Compile Complete"
-	dialogProgramCompilation  = "Program Compilation"
-	dialogOperationComplete   = "Operation Complete"
-	dialogConfirmation        = "Confirmation"
+	dialogIncompleteSymbols    = "Incomplete Symbols"
+	dialogConvertCompile       = "Convert/Compile"
+	dialogCommentedOutSymbols  = "Commented out Symbols and/or Devices"
+	dialogCompiling            = "Compiling..."
+	dialogCompileComplete      = "Compile Complete"
+	dialogProgramCompilation   = "Program Compilation"
+	dialogOperationComplete    = "Operation Complete"
+	dialogConfirmation         = "Confirmation"
+	dialogContinueReplace      = "Continue Replace?"
+	dialogReplaceControlSystem = "Replace Control System: keep revised program?"
 )
 
 // CompileResult holds the results of a compilation
@@ -263,7 +265,8 @@ func (c *Compiler) handleCompilationEvents(opts CompileOptions) (uintptr, *Compi
 	for {
 		select {
 		case ev := <-windows.MonitorCh:
-			c.log.Debug("Received window event",
+			c.log.Debug(
+				"Received window event",
 				slog.String("title", ev.Title),
 				slog.Uint64("hwnd", uint64(ev.Hwnd)),
 			)
@@ -476,7 +479,8 @@ func (c *Compiler) logCompilationMessages(errorMsgs, warningMsgs, noticeMsgs []s
 		c.log.Info("")
 		c.log.Info("Error messages:")
 		for i, msg := range errorMsgs {
-			c.log.Info(fmt.Sprintf("  %d. %s", i+1, msg),
+			c.log.Info(
+				fmt.Sprintf("  %d. %s", i+1, msg),
 				slog.Int("number", i+1),
 				slog.String("type", "error"),
 				slog.String("message", msg),
@@ -488,7 +492,8 @@ func (c *Compiler) logCompilationMessages(errorMsgs, warningMsgs, noticeMsgs []s
 		c.log.Info("")
 		c.log.Info("Warning messages:")
 		for i, msg := range warningMsgs {
-			c.log.Info(fmt.Sprintf("  %d. %s", i+1, msg),
+			c.log.Info(
+				fmt.Sprintf("  %d. %s", i+1, msg),
 				slog.Int("number", i+1),
 				slog.String("type", "warning"),
 				slog.String("message", msg),
@@ -500,7 +505,8 @@ func (c *Compiler) logCompilationMessages(errorMsgs, warningMsgs, noticeMsgs []s
 		c.log.Info("")
 		c.log.Info("Notice messages:")
 		for i, msg := range noticeMsgs {
-			c.log.Info(fmt.Sprintf("  %d. %s", i+1, msg),
+			c.log.Info(
+				fmt.Sprintf("  %d. %s", i+1, msg),
 				slog.Int("number", i+1),
 				slog.String("type", "notice"),
 				slog.String("message", msg),
@@ -534,6 +540,24 @@ func (c *Compiler) handlePreCompilationDialogs() error {
 				c.log.Debug("Detected 'Operation Complete' dialog - closing")
 				c.log.Info("Handling pre-compilation 'Operation Complete' dialog")
 				c.windowMgr.CloseWindow(ev.Hwnd, dialogOperationComplete)
+				time.Sleep(timeouts.WindowMessageDelay)
+
+			case dialogContinueReplace:
+				c.log.Debug("Detected 'Continue Replace?' dialog - clicking Yes")
+				c.log.Info("Handling pre-compilation 'Continue Replace?' dialog")
+				if !c.controlReader.FindAndClickButton(ev.Hwnd, "&Yes") {
+					c.log.Warn("Could not find '&Yes' button in 'Continue Replace?' dialog")
+				}
+
+				time.Sleep(timeouts.WindowMessageDelay)
+
+			case dialogReplaceControlSystem:
+				c.log.Debug("Detected 'Replace Control System' dialog - clicking Yes")
+				c.log.Info("Handling pre-compilation 'Replace Control System' dialog")
+				if !c.controlReader.FindAndClickButton(ev.Hwnd, "&Yes") {
+					c.log.Warn("Could not find '&Yes' button in 'Replace Control System' dialog")
+				}
+
 				time.Sleep(timeouts.WindowMessageDelay)
 
 			default:

@@ -15,9 +15,7 @@ func CreateTempDir(t *testing.T) string {
 	}
 
 	t.Cleanup(func() {
-		if err := os.RemoveAll(dir); err != nil {
-			// Ignore cleanup errors in tests
-		}
+		_ = os.RemoveAll(dir)
 	})
 	return dir
 }

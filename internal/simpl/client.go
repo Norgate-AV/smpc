@@ -15,16 +15,19 @@ import (
 
 // Client provides methods for interacting with SIMPL Windows processes
 type Client struct {
-	log logger.LoggerInterface
-	win *windows.Client
+	log         logger.LoggerInterface
+	win         *windows.Client
+	clickButton func(hwnd uintptr, text string) bool // injectable for testing
 }
 
 // NewClient creates a new SIMPL Windows client
 func NewClient(log logger.LoggerInterface) *Client {
-	return &Client{
+	c := &Client{
 		log: log,
 		win: windows.NewClient(log),
 	}
+	c.clickButton = c.win.Window.FindAndClickButton
+	return c
 }
 
 // FindWindow searches for the SIMPL Windows main window belonging to a specific process
@@ -66,7 +69,8 @@ func (c *Client) findWindowWithTracking(targetPid uint32, debug bool, seenWindow
 			// Only log if debug is enabled AND we haven't seen this window before
 			shouldLog := debug && (seenWindows == nil || !seenWindows[w.Hwnd])
 			if shouldLog {
-				c.log.Debug("Window found",
+				c.log.Debug(
+					"Window found",
 					slog.String("title", w.Title),
 					slog.Uint64("hwnd", uint64(w.Hwnd)),
 				)
@@ -127,7 +131,8 @@ func (c *Client) WaitForReady(hwnd uintptr, timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
 	elapsed := 0
 
-	c.log.Debug("Waiting for window ready state",
+	c.log.Debug(
+		"Waiting for window ready state",
 		slog.Uint64("hwnd", uint64(hwnd)),
 		slog.String("timeout", timeout.String()),
 	)
@@ -169,6 +174,9 @@ func (c *Client) WaitForAppear(targetPid uint32, timeout time.Duration) (uintptr
 	c.log.Debug("Searching for window", slog.Uint64("pid", uint64(targetPid)))
 
 	for time.Now().Before(deadline) {
+		// Dismiss any blocking startup dialogs so SIMPL can finish loading the file
+		c.dismissStartupBlockers()
+
 		// Check for the main SIMPL Windows window, passing seenWindows for tracking
 		result := c.findWindowWithTracking(targetPid, true, seenWindows)
 
@@ -252,6 +260,50 @@ func (c *Client) ForceCleanup(hwnd uintptr, knownPid uint32) {
 	}
 
 	c.log.Warn("Unable to cleanup SIMPL Windows - no hwnd or PID provided")
+}
+
+// dismissStartupBlockers non-blockingly drains MonitorCh and dismisses dialogs
+// that can appear before SIMPL Windows finishes loading the file (blocking WaitForAppear).
+func (c *Client) dismissStartupBlockers() {
+	if windows.MonitorCh == nil {
+		return
+	}
+
+	var deferred []windows.WindowEvent
+
+drain:
+	for {
+		select {
+		case ev := <-windows.MonitorCh:
+			switch ev.Title {
+			case "Continue Replace?":
+				c.log.Debug("Dismissing startup blocker", slog.String("title", ev.Title))
+				c.log.Info("Handling startup 'Continue Replace?' dialog")
+				if !c.clickButton(ev.Hwnd, "&Yes") {
+					c.log.Warn("Could not click Yes in 'Continue Replace?' dialog")
+				}
+			case "Replace Control System: keep revised program?":
+				c.log.Debug("Dismissing startup blocker", slog.String("title", ev.Title))
+				c.log.Info("Handling startup 'Replace Control System: keep revised program?' dialog")
+				if !c.clickButton(ev.Hwnd, "&Yes") {
+					c.log.Warn("Could not click Yes in 'Replace Control System' dialog")
+				}
+			default:
+				// Defer non-startup events so later handlers (compiler) can see them
+				deferred = append(deferred, ev)
+			}
+		default:
+			break drain
+		}
+	}
+
+	// Re-queue deferred events (non-blocking; drop if channel is full)
+	for _, ev := range deferred {
+		select {
+		case windows.MonitorCh <- ev:
+		default:
+		}
+	}
 }
 
 // StartMonitoring starts a background goroutine that monitors SIMPL Windows dialogs for a specific PID

@@ -78,11 +78,7 @@ func PrintLogFile(w io.Writer, opts LoggerOptions) error {
 	if err != nil {
 		return fmt.Errorf("failed to open log file %s: %w", logPath, err)
 	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			// Ignore close errors on read-only file
-		}
-	}()
+	defer func() { _ = file.Close() }()
 
 	if _, err := io.Copy(w, file); err != nil {
 		return fmt.Errorf("failed to read log file: %w", err)
@@ -268,16 +264,11 @@ func (h *ConsoleHandler) Handle(_ context.Context, r slog.Record) error {
 
 	// Apply color if set, otherwise plain output
 	if colorFunc != nil {
-		if _, err := colorFunc.Fprintf(h.writer, "%s%s\n", prefix, msg); err != nil {
-			// Ignore write errors to console
-		}
-
+		_, _ = colorFunc.Fprintf(h.writer, "%s%s\n", prefix, msg)
 		return nil
 	}
 
-	if _, err := fmt.Fprintf(h.writer, "%s%s\n", prefix, msg); err != nil {
-		// Ignore write errors to console
-	}
+	_, _ = fmt.Fprintf(h.writer, "%s%s\n", prefix, msg)
 
 	return nil
 }

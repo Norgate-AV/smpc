@@ -60,8 +60,20 @@ func RelaunchAsAdmin() error {
 		return fmt.Errorf("cannot relaunch when run via 'go run', please build the executable first with: go build -o smpc.exe")
 	}
 
-	// Build args string (excluding the exe name)
-	args := strings.Join(os.Args[1:], " ")
+	args := buildArgsString(os.Args[1:])
 
 	return ShellExecute(0, "runas", exe, args, "", 1)
+}
+
+// buildArgsString joins args into a single string, quoting any that contain spaces.
+func buildArgsString(args []string) string {
+	quoted := make([]string, len(args))
+	for i, arg := range args {
+		if strings.Contains(arg, " ") {
+			quoted[i] = `"` + arg + `"`
+		} else {
+			quoted[i] = arg
+		}
+	}
+	return strings.Join(quoted, " ")
 }

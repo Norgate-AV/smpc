@@ -123,7 +123,8 @@ func (w *windowManager) VerifyForegroundWindow(expectedHwnd uintptr, expectedPid
 	fgHwnd, _, _ := procGetForegroundWindow.Call()
 
 	if fgHwnd != expectedHwnd {
-		w.log.Warn("Wrong window in foreground",
+		w.log.Warn(
+			"Wrong window in foreground",
 			slog.Uint64("expected_hwnd", uint64(expectedHwnd)),
 			slog.Uint64("actual_hwnd", uint64(fgHwnd)),
 		)
@@ -139,7 +140,8 @@ func (w *windowManager) VerifyForegroundWindow(expectedHwnd uintptr, expectedPid
 		}
 
 		if actualPid != expectedPid {
-			w.log.Warn("Foreground window has wrong PID",
+			w.log.Warn(
+				"Foreground window has wrong PID",
 				slog.Uint64("hwnd", uint64(fgHwnd)),
 				slog.Uint64("expected_pid", uint64(expectedPid)),
 				slog.Uint64("actual_pid", uint64(actualPid)),
@@ -147,7 +149,8 @@ func (w *windowManager) VerifyForegroundWindow(expectedHwnd uintptr, expectedPid
 			return false
 		}
 
-		w.log.Debug("Foreground window verified",
+		w.log.Debug(
+			"Foreground window verified",
 			slog.Uint64("hwnd", uint64(fgHwnd)),
 			slog.Uint64("pid", uint64(actualPid)),
 		)
@@ -210,19 +213,14 @@ func (w *windowManager) FindAndClickButton(parentHwnd uintptr, buttonText string
 
 	for _, ci := range childInfos {
 		if ci.ClassName == "Button" && strings.EqualFold(ci.Text, buttonText) {
-			w.log.Debug("Found button, sending click",
+			w.log.Debug(
+				"Found button, sending click",
 				slog.String("text", buttonText),
 				slog.Uint64("hwnd", uint64(ci.Hwnd)),
 			)
 
-			// Send BN_CLICKED notification to parent
-			// WM_COMMAND: wParam = MAKEWPARAM(controlID, BN_CLICKED), lParam = hwnd
-			ret, _, err := procSendMessageW.Call(parentHwnd, WM_COMMAND, uintptr(BN_CLICKED), ci.Hwnd)
-			if ret == 0 {
-				w.log.Debug("SendMessage BN_CLICKED failed",
-					slog.String("text", ci.Text),
-					slog.Any("error", err))
-			}
+			// BM_CLICK directly to the button hwnd simulates a full click sequence
+			procSendMessageW.Call(ci.Hwnd, BM_CLICK, 0, 0)
 
 			return true
 		}

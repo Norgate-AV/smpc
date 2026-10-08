@@ -17,7 +17,8 @@ func TestCompiler_SuccessfulCompilation(t *testing.T) {
 	defer testutil.CleanupMonitorChannel()
 
 	mockWin := testutil.NewMockWindowManager().
-		WithChildInfosForHwnd(0x2222, // Compile Complete dialog
+		WithChildInfosForHwnd(
+			0x2222, // Compile Complete dialog
 			windows.ChildInfo{ClassName: "Static", Text: "Statistics"},
 			windows.ChildInfo{ClassName: "Edit", Text: "Program Errors: 0\r\nProgram Warnings: 0\r\nProgram Notices: 0\r\nCompile Time: 1.23 seconds\r\n"},
 		)
@@ -81,7 +82,8 @@ func TestCompiler_RecompileAll(t *testing.T) {
 	defer testutil.CleanupMonitorChannel()
 
 	mockWin := testutil.NewMockWindowManager().
-		WithChildInfosForHwnd(0x2222,
+		WithChildInfosForHwnd(
+			0x2222,
 			windows.ChildInfo{ClassName: "Edit", Text: "Errors: 0\r\nWarnings: 0\r\nNotices: 0\r\n"},
 		)
 
@@ -128,10 +130,12 @@ func TestCompiler_WithWarnings(t *testing.T) {
 	defer testutil.CleanupMonitorChannel()
 
 	mockWin := testutil.NewMockWindowManager().
-		WithChildInfosForHwnd(0x2222, // Compile Complete dialog
+		WithChildInfosForHwnd(
+			0x2222, // Compile Complete dialog
 			windows.ChildInfo{ClassName: "Edit", Text: "Program Errors: 0\r\nProgram Warnings: 2\r\nProgram Notices: 1\r\n"},
 		).
-		WithChildInfosForHwnd(0x3333, // Program Compilation dialog
+		WithChildInfosForHwnd(
+			0x3333, // Program Compilation dialog
 			windows.ChildInfo{ClassName: "ListBox", Items: []string{
 				"WARNING    (LGCMCVT102) ** Signal foo has no driving source",
 				"WARNING    (LGCMCVT102) ** Signal bar has no driving source",
@@ -183,10 +187,12 @@ func TestCompiler_WithErrors(t *testing.T) {
 	defer testutil.CleanupMonitorChannel()
 
 	mockWin := testutil.NewMockWindowManager().
-		WithChildInfosForHwnd(0x2222, // Compile Complete dialog
+		WithChildInfosForHwnd(
+			0x2222, // Compile Complete dialog
 			windows.ChildInfo{ClassName: "Edit", Text: "Program Errors: 3\r\nProgram Warnings: 0\r\nProgram Notices: 0\r\n"},
 		).
-		WithChildInfosForHwnd(0x3333, // Program Compilation dialog
+		WithChildInfosForHwnd(
+			0x3333, // Program Compilation dialog
 			windows.ChildInfo{ClassName: "ListBox", Items: []string{
 				"ERROR      (LGSPLS1700) Line 5: Undefined symbol 'foo'",
 				"ERROR      (LGCMCVT247) Line 15: Type mismatch",
@@ -405,4 +411,52 @@ func TestCompiler_WithSavePrompts(t *testing.T) {
 
 	// Verify Enter was sent twice (for save prompts)
 	assert.True(t, mockKbd.SendEnterCalled)
+}
+
+func TestCompiler_ConfirmationDialogAfterCompile(t *testing.T) {
+	testutil.SetupMonitorChannel()
+	defer testutil.CleanupMonitorChannel()
+
+	mockWin := testutil.NewMockWindowManager().
+		WithChildInfosForHwnd(0x2222,
+			windows.ChildInfo{ClassName: "Edit", Text: "Program Errors: 0\r\nProgram Warnings: 0\r\nProgram Notices: 0\r\n"},
+		)
+
+	mockKbd := testutil.NewMockKeyboardInjector()
+	mockCtrl := testutil.NewMockControlReader()
+	mockProc := testutil.NewMockProcessManager().WithPid(1234)
+
+	log := logger.NewNoOpLogger()
+	deps := &CompileDependencies{
+		ProcessMgr:    mockProc,
+		WindowMgr:     mockWin,
+		Keyboard:      mockKbd,
+		ControlReader: mockCtrl,
+	}
+
+	compiler := NewCompilerWithDeps(log, deps)
+
+	opts := CompileOptions{
+		Hwnd:                          0x9999,
+		SimplPid:                      1234,
+		SkipPreCompilationDialogCheck: true,
+	}
+
+	// "Confirmation" is queued after "Compile Complete" so handlePostCompilationEvents picks it up
+	testutil.SendEventsToMonitor(
+		windows.WindowEvent{Hwnd: 0x1111, Title: "Compiling..."},
+		windows.WindowEvent{Hwnd: 0x2222, Title: "Compile Complete"},
+		windows.WindowEvent{Hwnd: 0x5555, Title: "Confirmation"},
+	)
+
+	result, err := compiler.Compile(opts)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.False(t, result.HasErrors)
+
+	// Verify the Confirmation dialog was dismissed by clicking &No
+	assert.Len(t, mockCtrl.FindAndClickButtonCalls, 1)
+	assert.Equal(t, uintptr(0x5555), mockCtrl.FindAndClickButtonCalls[0].ParentHwnd)
+	assert.Equal(t, "&No", mockCtrl.FindAndClickButtonCalls[0].ButtonText)
 }

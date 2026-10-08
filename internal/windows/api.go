@@ -63,6 +63,7 @@ const (
 	SMTO_ABORTIFHUNG = 0x0002
 	SMTO_BLOCK       = 0x0003
 	BN_CLICKED       = 0
+	BM_CLICK         = 0x00F5
 
 	INPUT_KEYBOARD        = 1
 	KEYEVENTF_SCANCODE    = 0x0008
