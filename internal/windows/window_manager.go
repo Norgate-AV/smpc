@@ -220,7 +220,7 @@ func (w *windowManager) FindAndClickButton(parentHwnd uintptr, buttonText string
 			)
 
 			// BM_CLICK directly to the button hwnd simulates a full click sequence
-			procSendMessageW.Call(ci.Hwnd, BM_CLICK, 0, 0)
+			_, _, _ = procSendMessageW.Call(ci.Hwnd, BM_CLICK, 0, 0)
 
 			return true
 		}
