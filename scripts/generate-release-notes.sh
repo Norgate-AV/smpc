@@ -7,7 +7,7 @@ if [ "$CI" != "true" ]; then
     exit 0
 fi
 
-git-cliff --current --verbose | sed -n '/^###/,$p' >RELEASE_NOTES.md
+git-cliff --latest --verbose | sed -n '/^###/,$p' | sed -e '${/^$/d}' >RELEASE_NOTES.md
 
 # Verify the release notes were generated
 if [ ! -s RELEASE_NOTES.md ]; then
