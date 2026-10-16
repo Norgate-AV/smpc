@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0](https://github.com/Norgate-AV/smpc/compare/v0.1.2..v0.2.0) - 2026-10-16
+
+### 🚀 Features
+
+- Increase compile timeout to 20 minutes and add override flag - ([52f2976](https://github.com/Norgate-AV/smpc/commit/52f297624a69b0252be130dea96c7894857aaf01))
+
 ## [0.1.2](https://github.com/Norgate-AV/smpc/compare/v0.1.1..v0.1.2) - 2026-10-12
 
 ### 🐛 Bug Fixes
