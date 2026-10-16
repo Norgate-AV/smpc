@@ -58,10 +58,15 @@ func init() {
 	RootCmd.PersistentFlags().BoolP("verbose", "V", false, "enable verbose output")
 	RootCmd.PersistentFlags().BoolP("recompile-all", "r", false, "trigger Recompile All (Alt+F12) instead of Compile (F12)")
 	RootCmd.PersistentFlags().BoolP("logs", "l", false, "print the current log file to stdout and exit")
+	RootCmd.PersistentFlags().Duration("compile-timeout", timeouts.CompilationCompleteTimeout, "maximum compilation wait time (e.g. 30m or 1h; must be positive)")
 }
 
 // validateArgs validates that a .smw file argument is provided (if any args given)
 func validateArgs(cmd *cobra.Command, args []string) error {
+	if getDurationFlag(cmd, "compile-timeout") <= 0 {
+		return fmt.Errorf("--compile-timeout must be greater than zero")
+	}
+
 	// Allow 0 args for --logs flag, which is handled in Execute
 	if len(args) == 0 {
 		return nil
@@ -191,7 +196,8 @@ func launchSIMPLWindows(simplClient *simpl.Client, absPath string, log logger.Lo
 func setupSignalHandlers(ctx *ExecutionContext) {
 	// Set up Windows console control handler to catch window close events
 	_ = windows.SetConsoleCtrlHandler(func(ctrlType uint32) uintptr {
-		ctx.log.Debug("Received console control event",
+		ctx.log.Debug(
+			"Received console control event",
 			slog.String("type", windows.GetCtrlTypeName(ctrlType)),
 			slog.Uint64("code", uint64(ctrlType)),
 		)
@@ -252,11 +258,12 @@ func runCompilation(params CompilationParams) (*compiler.CompileResult, error) {
 	comp := compiler.NewCompiler(params.Logger)
 
 	result, err := comp.Compile(compiler.CompileOptions{
-		FilePath:     params.FilePath,
-		RecompileAll: params.Config.RecompileAll,
-		Hwnd:         params.Hwnd,
-		SimplPid:     params.Pid,
-		SimplPidPtr:  params.PidPtr,
+		FilePath:           params.FilePath,
+		RecompileAll:       params.Config.RecompileAll,
+		Hwnd:               params.Hwnd,
+		SimplPid:           params.Pid,
+		SimplPidPtr:        params.PidPtr,
+		CompilationTimeout: params.Config.CompilationTimeout,
 	})
 	if err != nil {
 		params.Logger.Error("Compilation failed", slog.Any("error", err))
@@ -268,7 +275,8 @@ func runCompilation(params CompilationParams) (*compiler.CompileResult, error) {
 
 // displayCompilationResults shows the compilation summary to the user
 func displayCompilationResults(result *compiler.CompileResult, log logger.LoggerInterface) {
-	log.Info("Compilation complete",
+	log.Info(
+		"Compilation complete",
 		slog.Int("errors", result.Errors),
 		slog.Int("warnings", result.Warnings),
 		slog.Int("notices", result.Notices),
@@ -296,7 +304,8 @@ func Execute(cmd *cobra.Command, args []string) error {
 	defer log.Close()
 
 	log.Debug("Starting smpc", slog.Any("args", args))
-	log.Debug("Flags set",
+	log.Debug(
+		"Flags set",
 		slog.Bool("verbose", cfg.Verbose),
 		slog.Bool("recompileAll", cfg.RecompileAll),
 	)
@@ -304,7 +313,8 @@ func Execute(cmd *cobra.Command, args []string) error {
 	// Recover from panics and log them
 	defer func() {
 		if r := recover(); r != nil {
-			log.Error("PANIC RECOVERED",
+			log.Error(
+				"PANIC RECOVERED",
 				slog.Any("panic", r),
 				slog.String("stack", string(debug.Stack())),
 			)

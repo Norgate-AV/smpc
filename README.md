@@ -72,6 +72,18 @@ Exit codes:
 
 ## Configuration
 
+### Compilation Timeout
+
+By default, `smpc` waits up to 20 minutes for compilation to complete. Use
+`--compile-timeout` to set a different positive duration, such as `30m` or `1h`:
+
+```bash
+smpc --compile-timeout 30m path/to/your/program.smw
+```
+
+Zero and negative durations are not allowed. The timeout starts when compilation
+begins, not while SIMPL Windows is launching.
+
 ### Custom SIMPL Windows Path
 
 By default, `smpc` looks for SIMPL Windows at:
@@ -175,14 +187,14 @@ For UI automation to work, configure a dedicated runner with interactive session
 1. **Create a dedicated local administrator account** for the CI runner (e.g., `ci-runner`)
 
 2. **Do NOT install the runner as a Windows service**
-   - If already installed as a service, remove it first
-   - Interactive session access is incompatible with service execution
+    - If already installed as a service, remove it first
+    - Interactive session access is incompatible with service execution
 
 3. **Configure automatic login** for the runner account on boot
 
 4. **Start the runner using a Windows scheduled task** triggered at user login
-   - The task must run with highest privileges in an interactive session
-   - Configure the runner to start when the dedicated account logs in
+    - The task must run with highest privileges in an interactive session
+    - Configure the runner to start when the dedicated account logs in
 
 #### UAC Handling
 

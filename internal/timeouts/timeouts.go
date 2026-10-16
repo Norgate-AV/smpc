@@ -39,7 +39,7 @@ const (
 	// compilation process to complete, from initiating compile to receiving
 	// the "Compile Complete" dialog. This accounts for large programs that
 	// may take several minutes to compile.
-	CompilationCompleteTimeout = 5 * time.Minute
+	CompilationCompleteTimeout = 20 * time.Minute
 
 	// DialogResponseDelay is the delay after sending input to dialog boxes to
 	// allow the dialog to process the input and respond.

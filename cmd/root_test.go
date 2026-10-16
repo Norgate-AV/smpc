@@ -6,11 +6,14 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/Norgate-AV/smpc/internal/logger"
+	"github.com/Norgate-AV/smpc/internal/timeouts"
 	"github.com/Norgate-AV/smpc/internal/version"
 )
 
@@ -214,6 +217,61 @@ func TestRootCmd_Help(t *testing.T) {
 	assert.Contains(t, output, "--verbose", "Should list verbose flag")
 	assert.Contains(t, output, "--recompile-all", "Should list recompile-all flag")
 	assert.Contains(t, output, "--logs", "Should list logs flag")
+	assert.Contains(t, output, "--compile-timeout", "Should list compile-timeout flag")
+}
+
+func TestRootCmd_CompileTimeoutDefault(t *testing.T) {
+	flag := RootCmd.PersistentFlags().Lookup("compile-timeout")
+	require.NotNil(t, flag)
+	assert.Equal(t, "duration", flag.Value.Type())
+	assert.Equal(t, (20 * time.Minute).String(), flag.DefValue)
+	assert.Equal(t, 20*time.Minute, timeouts.CompilationCompleteTimeout)
+}
+
+func TestCompileTimeoutFlag(t *testing.T) {
+	tests := []struct {
+		name                string
+		args                []string
+		want                time.Duration
+		wantParseError      bool
+		wantValidationError bool
+	}{
+		{name: "default", want: 20 * time.Minute},
+		{name: "minutes", args: []string{"--compile-timeout", "30m"}, want: 30 * time.Minute},
+		{name: "hours", args: []string{"--compile-timeout=1h"}, want: time.Hour},
+		{name: "seconds", args: []string{"--compile-timeout", "90s"}, want: 90 * time.Second},
+		{name: "combined units", args: []string{"--compile-timeout", "1h30m"}, want: 90 * time.Minute},
+		{name: "invalid", args: []string{"--compile-timeout", "later"}, wantParseError: true},
+		{name: "missing units", args: []string{"--compile-timeout", "30"}, wantParseError: true},
+		{name: "missing value", args: []string{"--compile-timeout"}, wantParseError: true},
+		{name: "zero", args: []string{"--compile-timeout", "0"}, wantValidationError: true},
+		{name: "negative", args: []string{"--compile-timeout=-1m"}, wantValidationError: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, persistent := range []bool{false, true} {
+				cmd := &cobra.Command{}
+				flags := cmd.Flags()
+				if persistent {
+					flags = cmd.PersistentFlags()
+				}
+				flags.Duration("compile-timeout", timeouts.CompilationCompleteTimeout, "compilation timeout")
+				err := cmd.ParseFlags(tt.args)
+				if tt.wantParseError {
+					require.Error(t, err)
+					continue
+				}
+				require.NoError(t, err)
+				err = validateArgs(cmd, []string{"program.smw"})
+				if tt.wantValidationError {
+					require.EqualError(t, err, "--compile-timeout must be greater than zero")
+					continue
+				}
+				require.NoError(t, err)
+				assert.Equal(t, tt.want, NewConfigFromFlags(cmd).CompilationTimeout)
+			}
+		})
+	}
 }
 
 // TestRootCmd_Flags tests flag parsing

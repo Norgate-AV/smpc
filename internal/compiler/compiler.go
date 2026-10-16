@@ -53,7 +53,7 @@ type CompileOptions struct {
 	SimplPid                      uint32        // Known PID from ShellExecuteEx (preferred over searching)
 	SimplPidPtr                   *uint32       // Pointer to store PID for signal handlers
 	SkipPreCompilationDialogCheck bool          // For testing - skip the pre-compilation dialog check
-	CompilationTimeout            time.Duration // Override default timeout (0 = use default 5 minutes)
+	CompilationTimeout            time.Duration // Override default timeout (0 = use default 20 minutes)
 }
 
 // CompileDependencies holds all external dependencies for testing
@@ -241,7 +241,7 @@ func (c *Compiler) Compile(opts CompileOptions) (*CompileResult, error) {
 // handleCompilationEvents uses an event-driven approach to respond to dialogs as they appear
 func (c *Compiler) handleCompilationEvents(opts CompileOptions) (uintptr, *CompileResult, error) {
 	// Maximum time to wait for compilation to complete
-	// Use custom timeout if specified, otherwise use default 5 minutes
+	// Use custom timeout if specified, otherwise use default 20 minutes
 	compilationTimeout := timeouts.CompilationCompleteTimeout
 	if opts.CompilationTimeout > 0 {
 		compilationTimeout = opts.CompilationTimeout
@@ -409,14 +409,14 @@ func (c *Compiler) handleCompilationEvents(opts CompileOptions) (uintptr, *Compi
 			}
 
 		case <-timeout.C:
-			c.log.Error("Compilation timeout: did not complete within 5 minutes")
+			c.log.Error(fmt.Sprintf("Compilation timeout: did not complete within %s", compilationTimeout))
 			return opts.Hwnd, &CompileResult{
 				Errors:    1,
 				HasErrors: true,
 				ErrorMessages: []string{
-					"Compilation timeout: did not detect 'Compile Complete' dialog within 5 minutes",
+					fmt.Sprintf("Compilation timeout: did not detect 'Compile Complete' dialog within %s", compilationTimeout),
 				},
-			}, fmt.Errorf("compilation timeout: did not detect 'Compile Complete' dialog within 5 minutes")
+			}, fmt.Errorf("compilation timeout: did not detect 'Compile Complete' dialog within %s", compilationTimeout)
 		}
 	}
 }

@@ -316,9 +316,11 @@ func TestCompiler_CompileDialogTimeout(t *testing.T) {
 	assert.Error(t, err)
 	assert.NotNil(t, result)
 	assert.Contains(t, err.Error(), "Compile Complete")
+	assert.Contains(t, err.Error(), "within 1s")
 	assert.True(t, result.HasErrors)
 	assert.Equal(t, 1, result.Errors)
 	assert.Len(t, result.ErrorMessages, 1)
+	assert.Contains(t, result.ErrorMessages[0], "within 1s")
 }
 
 func TestCompiler_NoPid(t *testing.T) {
@@ -418,7 +420,8 @@ func TestCompiler_ConfirmationDialogAfterCompile(t *testing.T) {
 	defer testutil.CleanupMonitorChannel()
 
 	mockWin := testutil.NewMockWindowManager().
-		WithChildInfosForHwnd(0x2222,
+		WithChildInfosForHwnd(
+			0x2222,
 			windows.ChildInfo{ClassName: "Edit", Text: "Program Errors: 0\r\nProgram Warnings: 0\r\nProgram Notices: 0\r\n"},
 		)
 
